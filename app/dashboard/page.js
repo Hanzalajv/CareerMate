@@ -12,6 +12,13 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true)
     const [activeTab, setActiveTab] = useState('overview')
     const router = useRouter()
+    const [deepDiveData, setDeepDiveData] = useState({
+        loading: true,
+        activeSession: null,
+        latestReport: null,
+        sessionsThisWeek: 0,
+        pastSessions: []
+    })
 
     useEffect(() => {
         getCurrentUser().then(async u => {
@@ -34,6 +41,39 @@ export default function DashboardPage() {
             }
             setLoading(false)
         })
+    }, [])
+
+    useEffect(() => {
+        async function loadDeepDiveData() {
+            try {
+                const { data: { user } } = await supabase.auth.getUser()
+                if (!user) return
+
+                // Check for active session
+                const activeRes = await fetch('/api/deep-dive/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: user.id })
+                })
+                const activeData = await activeRes.json()
+
+                // Get reports
+                const reportsRes = await fetch('/api/deep-dive/report')
+                const reportsData = await reportsRes.json()
+
+                setDeepDiveData({
+                    loading: false,
+                    activeSession: activeData.session_id && !activeData.error ? activeData : null,
+                    latestReport: reportsData.reports?.[0] || null,
+                    sessionsThisWeek: activeData.sessions_used || (activeData.session_id ? 1 : 0),
+                    pastSessions: reportsData.reports || []
+                })
+            } catch (err) {
+                setDeepDiveData(prev => ({ ...prev, loading: false }))
+            }
+        }
+
+        loadDeepDiveData()
     }, [])
 
     const handleLogout = async () => {
@@ -81,6 +121,18 @@ export default function DashboardPage() {
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: 12 }}>
+                        <Link href="/deep-dive" style={{
+                            padding: '10px 20px',
+                            borderRadius: 10,
+                            background: 'rgba(245,158,11,0.15)',
+                            color: '#F59E0B',
+                            textDecoration: 'none',
+                            fontSize: 14,
+                            fontWeight: 500,
+                            border: '1px solid rgba(245,158,11,0.2)'
+                        }}>
+                            🎯 Deep Dive
+                        </Link>
                         <Link href="/chat" style={{
                             padding: '10px 20px',
                             borderRadius: 10,
@@ -134,7 +186,208 @@ export default function DashboardPage() {
                     ))}
                 </div>
 
-                {/* ⭐ CHAT CARD - Add this after stats ⭐ */}
+                {/* ⭐ CAREER DEEP DIVE SECTION ⭐ */}
+                <div style={{
+                    padding: 24,
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(245,158,11,0.2)',
+                    borderRadius: 12,
+                    marginBottom: 24
+                }}>
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: 16
+                    }}>
+                        <div>
+                            <h2 style={{ fontSize: 18, fontWeight: 600 }}>🎯 Career Deep Dive</h2>
+                            <p style={{ color: '#94A3B8', fontSize: 14, marginTop: 4 }}>
+                                AI-powered career assessment for the Pakistani market
+                            </p>
+                        </div>
+                        <span style={{
+                            padding: '4px 12px',
+                            background: 'rgba(255,255,255,0.05)',
+                            borderRadius: 20,
+                            fontSize: 13,
+                            color: '#94A3B8'
+                        }}>
+                            {deepDiveData.sessionsThisWeek}/2 this week
+                        </span>
+                    </div>
+
+                    {deepDiveData.loading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 0' }}>
+                            <div style={{
+                                width: 20,
+                                height: 20,
+                                border: '2px solid rgba(16,185,129,0.3)',
+                                borderTop: '2px solid #10B981',
+                                borderRadius: '50%',
+                                animation: 'spin 1s linear infinite'
+                            }} />
+                            <p style={{ color: '#94A3B8', fontSize: 14 }}>Loading...</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Active Session Banner */}
+                            {deepDiveData.activeSession && (
+                                <div style={{
+                                    padding: 16,
+                                    background: 'rgba(16,185,129,0.08)',
+                                    border: '1px solid rgba(16,185,129,0.2)',
+                                    borderRadius: 10,
+                                    marginBottom: 12
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <p style={{ color: '#10B981', fontWeight: 600, fontSize: 14 }}>Session In Progress</p>
+                                            <p style={{ color: '#94A3B8', fontSize: 14, marginTop: 4 }}>
+                                                {deepDiveData.activeSession.resumed
+                                                    ? `You've answered ${deepDiveData.activeSession.total_answered} questions. Continue where you left off.`
+                                                    : 'Ready to begin your assessment'}
+                                            </p>
+                                        </div>
+                                        <Link
+                                            href="/deep-dive"
+                                            style={{
+                                                padding: '10px 20px',
+                                                background: '#10B981',
+                                                borderRadius: 8,
+                                                color: 'white',
+                                                textDecoration: 'none',
+                                                fontSize: 14,
+                                                fontWeight: 600,
+                                                whiteSpace: 'nowrap'
+                                            }}
+                                        >
+                                            {deepDiveData.activeSession.resumed ? 'Continue' : 'Start'}
+                                        </Link>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Latest Report */}
+                            {deepDiveData.latestReport && (
+                                <div style={{
+                                    padding: 16,
+                                    background: 'rgba(255,255,255,0.03)',
+                                    borderRadius: 10,
+                                    marginBottom: 12
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <p style={{ color: 'white', fontWeight: 600, fontSize: 14 }}>Latest Report</p>
+                                            <p style={{ color: '#94A3B8', fontSize: 13, marginTop: 4 }}>
+                                                Session {deepDiveData.latestReport.session?.session_number} • {new Date(deepDiveData.latestReport.generated_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                            </p>
+                                        </div>
+                                        <Link
+                                            href={`/report/${deepDiveData.latestReport.session_id}`}
+                                            style={{
+                                                color: '#10B981',
+                                                textDecoration: 'none',
+                                                fontSize: 14,
+                                                fontWeight: 500
+                                            }}
+                                        >
+                                            View Report →
+                                        </Link>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* No Session or Report Yet */}
+                            {!deepDiveData.activeSession && !deepDiveData.latestReport && (
+                                <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                                    <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
+                                    <p style={{ color: '#94A3B8', fontSize: 14, marginBottom: 16 }}>
+                                        Take a 20-minute assessment and get personalized career guidance for the Pakistani job market.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Action Button */}
+                            {!deepDiveData.activeSession && (
+                                <Link
+                                    href="/deep-dive"
+                                    onClick={(e) => {
+                                        if (deepDiveData.sessionsThisWeek >= 2) {
+                                            e.preventDefault()
+                                        }
+                                    }}
+                                    style={{
+                                        display: 'block',
+                                        width: '100%',
+                                        textAlign: 'center',
+                                        padding: '14px',
+                                        borderRadius: 10,
+                                        fontWeight: 600,
+                                        fontSize: 14,
+                                        textDecoration: 'none',
+                                        background: deepDiveData.sessionsThisWeek >= 2
+                                            ? 'rgba(255,255,255,0.05)'
+                                            : '#10B981',
+                                        color: deepDiveData.sessionsThisWeek >= 2
+                                            ? '#64748B'
+                                            : 'white',
+                                        cursor: deepDiveData.sessionsThisWeek >= 2
+                                            ? 'not-allowed'
+                                            : 'pointer'
+                                    }}
+                                >
+                                    {deepDiveData.sessionsThisWeek >= 2
+                                        ? 'Weekly Limit Reached — Available Next Week'
+                                        : deepDiveData.latestReport
+                                            ? 'Start New Deep Dive'
+                                            : 'Start Your First Deep Dive'}
+                                </Link>
+                            )}
+                        </>
+                    )}
+                </div>
+
+                {/* Past Sessions */}
+                {deepDiveData.pastSessions.length > 0 && (
+                    <div style={{
+                        padding: 24,
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: 12,
+                        marginBottom: 24
+                    }}>
+                        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>📚 Past Deep Dives</h2>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {deepDiveData.pastSessions.map((session) => (
+                                <Link
+                                    key={session.session_id}
+                                    href={`/report/${session.session_id}`}
+                                    style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        padding: 12,
+                                        background: 'rgba(255,255,255,0.03)',
+                                        borderRadius: 8,
+                                        textDecoration: 'none',
+                                        color: 'white'
+                                    }}
+                                >
+                                    <div>
+                                        <p style={{ fontWeight: 500, fontSize: 14 }}>Session {session.session?.session_number}</p>
+                                        <p style={{ color: '#94A3B8', fontSize: 13, marginTop: 2 }}>
+                                            {session.session?.question_count || '?'} questions • {new Date(session.generated_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        </p>
+                                    </div>
+                                    <span style={{ color: '#10B981', fontSize: 14 }}>View →</span>
+                                </Link>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* ⭐ CHAT CARD ⭐ */}
                 <div style={{
                     padding: 24,
                     background: 'rgba(16,185,129,0.06)',
@@ -421,7 +674,21 @@ export default function DashboardPage() {
                 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>📋 Next Steps</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {/* ⬇️ CHAT BUTTON IN NEXT STEPS ⬇️ */}
+                        {/* Deep Dive Button */}
+                        <Link href="/deep-dive" style={{
+                            padding: '14px 20px',
+                            background: 'rgba(245,158,11,0.15)',
+                            borderRadius: 8,
+                            color: '#F59E0B',
+                            textDecoration: 'none',
+                            fontWeight: 600,
+                            border: '1px solid rgba(245,158,11,0.2)',
+                            textAlign: 'center'
+                        }}>
+                            🎯 Start Career Deep Dive
+                        </Link>
+
+                        {/* Chat Button */}
                         <Link href="/chat" style={{
                             padding: '14px 20px',
                             background: 'rgba(16,185,129,0.15)',
