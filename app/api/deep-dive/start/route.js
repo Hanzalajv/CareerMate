@@ -67,7 +67,35 @@ export async function POST(request) {
     }
 
     // Create new session
-    const session = await createSession(user.id)
+    let session
+    try {
+      session = await createSession(user.id)
+    } catch (createError) {
+      // If duplicate (race condition), fetch the active session instead
+      if (createError.message?.includes('duplicate') || createError.code === '23505') {
+        const existingSession = await getActiveSession(user.id)
+        if (existingSession) {
+          const qa = existingSession.questions_answers || []
+          const questionNumber = qa.length + 1
+          
+          const prompt = buildQuestionPrompt(qa, questionNumber)
+          const response = await fetchGemini([
+            { role: 'system', content: buildSystemPrompt(profile) },
+            { role: 'user', content: prompt }
+          ])
+
+          return Response.json({
+            resumed: true,
+            session_id: existingSession.session_id,
+            question_number: questionNumber,
+            total_answered: qa.length,
+            question: response,
+            category_progress: getCategoryProgress(qa)
+          })
+        }
+      }
+      throw createError
+    }
 
     // Generate first question
     const firstPrompt = `Start the Career Deep Dive assessment. Ask the first question to understand their financial reality and current situation. Keep it practical and specific to Pakistan. Do NOT ask about their passions or dreams — start with their real-world constraints and needs.`

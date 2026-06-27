@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+
+
 export default function DeepDivePage() {
   const router = useRouter()
   const supabase =  createClient()
@@ -20,6 +22,7 @@ export default function DeepDivePage() {
   const [sessionsRemaining, setSessionsRemaining] = useState(null)
   const [error, setError] = useState(null)
   const [complete, setComplete] = useState(false)
+  const [progressCount, setProgressCount] = useState(0)
 
   const chatEndRef = useRef(null)
   const inputRef = useRef(null)
@@ -47,8 +50,7 @@ export default function DeepDivePage() {
     setUser(user)
     await startOrResumeSession(user)
   }
-
-  async function startOrResumeSession(user) {
+async function startOrResumeSession(user) {
     try {
       setLoading(true)
       setError(null)
@@ -76,15 +78,21 @@ export default function DeepDivePage() {
         setCategoryProgress(data.category_progress)
       }
 
-      // Add AI's first question
-      setMessages([
-        {
-          role: 'assistant',
-          content: data.resumed
-            ? `Welcome back! Let's continue your Career Deep Dive. You've answered ${data.total_answered} questions so far.\n\n${data.question}`
-            : `Let's begin your Career Deep Dive. I'll ask you some questions to understand your situation better and find the best career path for you.\n\n${data.question}`
-        }
-      ])
+      // Build the first message
+      const firstMessageContent = data.resumed
+        ? `Welcome back! Let's continue your Career Deep Dive.\n\n${data.question}`
+        : `Let's begin your Career Deep Dive. I'll ask you some questions to understand your situation better and find the best career path for you.\n\n${data.question}`
+
+      const firstMessage = { role: 'assistant', content: firstMessageContent }
+      setMessages([firstMessage])
+
+      // Extract progress from AI's response
+      const progressMatch = data.question?.match(/\[Progress:\s*(\d+)\/20\]/)
+      if (progressMatch) {
+        setProgressCount(parseInt(progressMatch[1]))
+      } else {
+        setProgressCount(data.total_answered || 0)
+      }
 
       setLoading(false)
     } catch (err) {
@@ -93,7 +101,19 @@ export default function DeepDivePage() {
     }
   }
 
-  async function handleSend() {
+function extractProgressFromMessage(message) {
+  if (!message) return null
+  const match = message.match(/\[Progress:\s*(\d+)\/20\]/)
+  if (match) {
+    return parseInt(match[1])
+  }
+  return null
+}
+
+function calculateProgressPercent(count) {
+  return Math.min(Math.round((count / 20) * 100), 100)
+}
+async function handleSend() {
     const trimmed = input.trim()
     if (!trimmed || sending || complete) return
 
@@ -120,7 +140,7 @@ export default function DeepDivePage() {
       if (!response.ok) {
         setMessages([...updatedMessages, {
           role: 'assistant',
-          content: 'Sorry, something went wrong. Please try again.'
+          content: data.error || 'Something went wrong. Please try again.'
         }])
         setSending(false)
         return
@@ -142,10 +162,15 @@ export default function DeepDivePage() {
         // Next question
         setQuestionNumber(data.question_number)
         setCategoryProgress(data.category_progress || [])
-        setMessages([...updatedMessages, {
-          role: 'assistant',
-          content: data.question
-        }])
+        
+        const aiMessage = { role: 'assistant', content: data.question }
+        setMessages([...updatedMessages, aiMessage])
+        
+        // Extract progress from AI response
+        const progressMatch = data.question?.match(/\[Progress:\s*(\d+)\/20\]/)
+        if (progressMatch) {
+          setProgressCount(parseInt(progressMatch[1]))
+        }
       }
 
       setSending(false)
@@ -198,30 +223,52 @@ export default function DeepDivePage() {
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col">
-      {/* Header */}
-      <header className="bg-slate-800/50 backdrop-blur-sm border-b border-slate-700 px-4 py-3">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-white font-semibold">Career Deep Dive</h1>
-            <p className="text-slate-400 text-sm">
-              {complete ? 'Session Complete' : `Question ${questionNumber}`}
-            </p>
-          </div>
+    {/* Header */}
+<header className="bg-slate-800/50 backdrop-blur-sm border-b border-slate-700">
+  <div className="max-w-3xl mx-auto px-4 py-3">
+    <div className="flex items-center justify-between mb-2">
+      <div>
+        <h1 className="text-white font-semibold">Career Deep Dive</h1>
+        <p className="text-slate-400 text-sm">
+          {complete ? 'Session Complete' : `${progressCount}/20 Meaningful Answers`}
+        </p>
+      </div>
 
-          <div className="flex items-center gap-3">
-            {sessionsRemaining !== null && (
-              <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full">
-                {sessionsRemaining} session{sessionsRemaining !== 1 ? 's' : ''} left this week
-              </span>
-            )}
-            {resumed && (
-              <span className="text-xs bg-amber-900/50 text-amber-400 px-2 py-1 rounded-full">
-                Resumed
-              </span>
-            )}
-          </div>
-        </div>
-      </header>
+      <div className="flex items-center gap-3">
+        {sessionsRemaining !== null && (
+          <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full">
+            {sessionsRemaining} session{sessionsRemaining !== 1 ? 's' : ''} left this week
+          </span>
+        )}
+        {resumed && (
+          <span className="text-xs bg-amber-900/50 text-amber-400 px-2 py-1 rounded-full">
+            Resumed
+          </span>
+        )}
+      </div>
+    </div>
+
+    {/* Progress Bar */}
+    <div className="flex items-center gap-3">
+      <div className="flex-1 bg-slate-700 rounded-full h-2.5 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-700 ease-out"
+          style={{
+            width: `${calculateProgressPercent(progressCount)}%`,
+            background: progressCount < 6
+              ? 'linear-gradient(90deg, #ef4444, #f59e0b)'
+              : progressCount < 12
+                ? 'linear-gradient(90deg, #f59e0b, #10b981)'
+                : 'linear-gradient(90deg, #10b981, #06b6d4)'
+          }}
+        />
+      </div>
+      <span className="text-xs text-slate-400 font-medium min-w-[40px] text-right">
+        {calculateProgressPercent(progressCount)}%
+      </span>
+    </div>
+  </div>
+</header>
 
       {/* Category Progress Bar */}
       {categoryProgress.length > 0 && !complete && (

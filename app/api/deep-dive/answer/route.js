@@ -66,11 +66,15 @@ export async function POST(request) {
     ]
 
     const questionNumber = updatedQA.length + 1
-
     // Check if session should end
     const shouldEnd = checkIfShouldEnd(updatedQA)
 
-    if (shouldEnd) {
+    // Also check the latest AI question for [Progress: 20/20]
+    const lastAIQuestion = session.last_question || ''
+    const aiSaysComplete = lastAIQuestion.includes('[Progress: 20/20]') ||
+                           lastAIQuestion.includes('[Progress:20/20]')
+
+    if (shouldEnd || aiSaysComplete) {
       // Complete the session
       const transcript = buildTranscript(updatedQA)
       await completeSession(sessionId, transcript)
@@ -79,10 +83,9 @@ export async function POST(request) {
       const reportPrompt = buildReportPrompt(profile, updatedQA)
       
       const reportResponse = await fetchGemini([
-  { role: 'system', content: 'You are a career report generator. Return ONLY valid JSON.' },
-  { role: 'user', content: reportPrompt }
-], { maxTokens: 4000 })
-
+        { role: 'system', content: 'You are a career report generator. Return ONLY valid JSON.' },
+        { role: 'user', content: reportPrompt }
+      ], { maxTokens: 4000 })
       // Parse and save report
       let reportContent = null
 
@@ -245,9 +248,21 @@ function detectCategory(previousQA, answer) {
 
   return 'General'
 }
-
 function checkIfShouldEnd(questionsAnswers) {
   const count = questionsAnswers.length
+
+  // Check if AI has already said 20/20
+  let maxProgress = 0
+  questionsAnswers.forEach(qa => {
+    const match = qa.question?.match(/\[Progress:\s*(\d+)\/20\]/)
+    if (match) {
+      const progress = parseInt(match[1])
+      if (progress > maxProgress) maxProgress = progress
+    }
+  })
+  
+  // End if AI said 20/20
+  if (maxProgress >= 20) return true
 
   // Must have at least minimum questions
   if (count < MINIMUM_QUESTIONS) return false
@@ -267,7 +282,6 @@ function checkIfShouldEnd(questionsAnswers) {
   // End if all categories covered OR max questions reached
   return allCategoriesCovered || count >= MAXIMUM_QUESTIONS
 }
-
 function getCategoryProgress(questionsAnswers) {
   const categoryCount = {}
   questionsAnswers.forEach(qa => {
