@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { loginUser, getCurrentUser } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Compass, Mail, Lock, ArrowRight, Eye, EyeOff, X } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -10,38 +11,28 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
+  const [showPassword, setShowPassword] = useState(false)
+  const [focused, setFocused] = useState('')
   const router = useRouter()
 
-  // Check if user is already logged in
   useEffect(() => {
     getCurrentUser().then(u => {
-      if (u) {
-        router.replace('/dashboard')
-      } else {
-        setChecking(false)
-      }
+      if (u) router.replace('/dashboard')
+      else setChecking(false)
     })
   }, [])
 
-  // Show nothing while checking
   if (checking) return null
 
   async function handleLogin(e) {
     e.preventDefault()
     setError('')
 
-    if (!email.trim()) {
-      setError('Please enter your email address.')
-      return
-    }
-    if (!password) {
-      setError('Please enter your password.')
-      return
-    }
+    if (!email.trim()) { setError('Please enter your email address.'); return }
+    if (!password) { setError('Please enter your password.'); return }
 
     setLoading(true)
     const { user, error: authError } = await loginUser(email, password)
-    console.log('Login result:', user, authError)
     setLoading(false)
 
     if (authError) {
@@ -52,108 +43,100 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 50%, #0F766E 100%)',
-      padding: 24
-    }}>
-      <form onSubmit={handleLogin} style={{
-        background: 'rgba(255,255,255,0.03)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 20, padding: 48, width: '100%', maxWidth: 420,
-        boxShadow: '0 25px 60px rgba(0,0,0,0.3)'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <span style={{ fontSize: 40 }}>🧭</span>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'white', marginTop: 12, letterSpacing: -1 }}>
-            Welcome Back
-          </h1>
-          <p style={{ color: '#94A3B8', fontSize: 14, marginTop: 8 }}>
-            Sign in to continue your career journey
+    <div className="min-h-screen flex items-center justify-center bg-[#070b14] relative overflow-hidden p-6">
+      {/* Background effects */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-[-30%] right-[-20%] w-[600px] h-[600px] rounded-full bg-emerald-500/[0.04] blur-[150px]" />
+        <div className="absolute bottom-[-30%] left-[-20%] w-[500px] h-[500px] rounded-full bg-blue-500/[0.04] blur-[140px]" />
+      </div>
+
+      {/* Grid texture */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.02]" style={{
+        backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)',
+        backgroundSize: '50px 50px'
+      }} />
+
+      <form onSubmit={handleLogin} className="relative z-10 w-full max-w-md">
+        <div className="bg-white/[0.02] backdrop-blur-2xl border border-white/[0.06] rounded-3xl p-8 lg:p-10 shadow-2xl shadow-black/50">
+          
+          {/* Logo + Title */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 via-blue-500/20 to-cyan-500/20 border border-white/10 mb-5">
+              <Compass className="w-8 h-8 text-emerald-400" />
+            </div>
+            <h1 className="text-2xl font-bold text-white mb-2">Welcome Back</h1>
+            <p className="text-slate-500 text-sm">Sign in to continue your career journey.</p>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6 flex items-start gap-3">
+              <X className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+
+          {/* Email */}
+          <div className="mb-5">
+            <label className="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Email Address</label>
+            <div className={`relative rounded-xl border transition-all duration-300 ${focused === 'email' ? 'border-emerald-500/50 bg-white/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
+              <Mail className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${focused === 'email' ? 'text-emerald-400' : 'text-slate-600'}`} />
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onFocus={() => setFocused('email')}
+                onBlur={() => setFocused('')}
+                className="w-full bg-transparent text-white placeholder-slate-600 text-sm py-3.5 pl-11 pr-4 rounded-xl outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Password */}
+          <div className="mb-8">
+            <label className="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Password</label>
+            <div className={`relative rounded-xl border transition-all duration-300 ${focused === 'password' ? 'border-emerald-500/50 bg-white/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
+              <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${focused === 'password' ? 'text-emerald-400' : 'text-slate-600'}`} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="••••••••"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onFocus={() => setFocused('password')}
+                onBlur={() => setFocused('')}
+                className="w-full bg-transparent text-white placeholder-slate-600 text-sm py-3.5 pl-11 pr-12 rounded-xl outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="group relative w-full py-4 bg-gradient-to-r from-emerald-400 via-blue-400 to-cyan-400 animate-gradient text-white font-bold rounded-2xl hover:opacity-90 transition-all duration-300 shadow-xl shadow-emerald-500/20 hover:shadow-2xl hover:shadow-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="inline-flex items-center gap-2">
+              {loading ? 'Signing in...' : 'Sign In'}
+              {!loading && <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />}
+            </span>
+          </button>
+
+          {/* Register link */}
+          <p className="text-center text-slate-500 text-sm mt-6">
+            Don&apos;t have an account?{' '}
+            <Link href="/register" className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors">
+              Create one
+            </Link>
           </p>
         </div>
-
-        {error && (
-          <div style={{
-            background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: 10, padding: '12px 16px', marginBottom: 20,
-            color: '#EF4444', fontSize: 13
-          }}>
-            {error}
-          </div>
-        )}
-
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', color: '#94A3B8', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-            Email Address
-          </label>
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            style={{
-              width: '100%', padding: '14px 16px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 10, color: 'white', fontSize: 15,
-              outline: 'none', transition: 'all 0.3s'
-            }}
-            onFocus={e => e.target.style.borderColor = '#10B981'}
-            onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
-          />
-        </div>
-
-        <div style={{ marginBottom: 28 }}>
-          <label style={{ display: 'block', color: '#94A3B8', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-            Password
-          </label>
-          <input
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={{
-              width: '100%', padding: '14px 16px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 10, color: 'white', fontSize: 15,
-              outline: 'none', transition: 'all 0.3s'
-            }}
-            onFocus={e => e.target.style.borderColor = '#10B981'}
-            onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            width: '100%', padding: '16px',
-            background: loading ? '#0F766E' : '#10B981',
-            color: 'white', border: 'none', borderRadius: 12,
-            fontSize: 16, fontWeight: 700, cursor: loading ? 'wait' : 'pointer',
-            transition: 'all 0.3s',
-            boxShadow: '0 8px 30px rgba(16, 185, 129, 0.25)'
-          }}
-          onMouseEnter={e => {
-            if (!loading) e.target.style.background = '#059669'
-          }}
-          onMouseLeave={e => {
-            if (!loading) e.target.style.background = '#10B981'
-          }}
-        >
-          {loading ? 'Signing in...' : 'Sign In'}
-        </button>
-
-        <p style={{ textAlign: 'center', marginTop: 24, color: '#64748B', fontSize: 14 }}>
-          Don&apos;t have an account?{' '}
-          <Link href="/register" style={{ color: '#10B981', fontWeight: 700, textDecoration: 'none' }}>
-            Create one
-          </Link>
-        </p>
       </form>
     </div>
   )

@@ -167,6 +167,28 @@ ${reportPrompt}`
       if (reportContent) {
         await saveReport(user.id, sessionId, reportContent)
 
+        // Create checklist from report
+if (reportContent.checklist && reportContent.checklist.length > 0) {
+  const checklistItems = reportContent.checklist.map(item => ({
+    task: item.task,
+    category: item.category || 'General',
+    priority: item.priority || 'MEDIUM',
+    deadline: item.deadline || 'This month',
+    completed: false,
+    completed_at: null
+  }))
+
+  await supabase
+    .from('user_checklists')
+    .insert({
+      user_id: user.id,
+      report_id: sessionId,
+      month_number: 1,
+      status: 'NOT_STARTED',
+      items: checklistItems
+    })
+}
+
         // Update session with last Q&A
         await updateSession(sessionId, {
           questions_answers: updatedQA,
@@ -187,10 +209,9 @@ ${reportPrompt}`
     // Generate next question
     const questionPrompt = buildQuestionPrompt(updatedQA, questionNumber)
     
-    const nextQuestion = await fetchGemini([
-  { role: 'system', content: buildSystemPrompt(profile) },
+   const nextQuestion = await fetchGemini([
   { role: 'user', content: questionPrompt }
-], { maxTokens: 500})
+], { maxTokens: 500 })
 
     // Save updated session
     await updateSession(sessionId, {

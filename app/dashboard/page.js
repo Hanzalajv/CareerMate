@@ -4,6 +4,12 @@ import { getCurrentUser, logoutUser } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { 
+  Compass, Target, BookOpen, Flame, Brain, Sparkles, 
+  ArrowRight, Zap, Check, Star, Trophy, ChevronRight, 
+  PenLine, ClipboardList, MapPin, GraduationCap, LogOut,
+  TrendingUp, Calendar, Clock
+} from 'lucide-react'
 
 export default function DashboardPage() {
     const supabase = createClient()
@@ -12,6 +18,9 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true)
     const [activeTab, setActiveTab] = useState('overview')
     const router = useRouter()
+    const [checklists, setChecklists] = useState([])
+    const [checklistsLoading, setChecklistsLoading] = useState(true)
+    const [streak, setStreak] = useState({ daily_streak: 0, daily_longest: 0 })
     const [deepDiveData, setDeepDiveData] = useState({
         loading: true,
         activeSession: null,
@@ -22,25 +31,34 @@ export default function DashboardPage() {
 
     useEffect(() => {
         getCurrentUser().then(async u => {
-            if (!u) {
-                router.push('/login')
-                return
-            }
+            if (!u) { router.push('/login'); return }
             setUser(u)
-
             const { data, error } = await supabase
                 .from('user_profiles')
                 .select('*')
                 .eq('user_id', u.id)
                 .single()
-
-            if (error) {
-                console.error('Error fetching profile:', error)
-            } else {
-                setProfile(data)
-            }
+            if (error) console.error('Error fetching profile:', error)
+            else setProfile(data)
             setLoading(false)
         })
+    }, [])
+
+    useEffect(() => {
+        async function loadData() {
+            try {
+                const { data: { user } } = await supabase.auth.getUser()
+                if (!user) return
+                const res = await fetch('/api/checklist/get')
+                const d = await res.json()
+                if (res.ok && d.checklists) setChecklists(d.checklists)
+                const sr = await fetch('/api/streak/get')
+                const sd = await sr.json()
+                if (sr.ok) setStreak(sd.streak)
+                setChecklistsLoading(false)
+            } catch (err) { setChecklistsLoading(false) }
+        }
+        loadData()
     }, [])
 
     useEffect(() => {
@@ -48,19 +66,14 @@ export default function DashboardPage() {
             try {
                 const { data: { user } } = await supabase.auth.getUser()
                 if (!user) return
-
-                // Check for active session
                 const activeRes = await fetch('/api/deep-dive/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userId: user.id })
                 })
                 const activeData = await activeRes.json()
-
-                // Get reports
                 const reportsRes = await fetch('/api/deep-dive/report')
                 const reportsData = await reportsRes.json()
-
                 setDeepDiveData({
                     loading: false,
                     activeSession: activeData.session_id && !activeData.error ? activeData : null,
@@ -68,666 +81,395 @@ export default function DashboardPage() {
                     sessionsThisWeek: activeData.sessions_used || (activeData.session_id ? 1 : 0),
                     pastSessions: reportsData.reports || []
                 })
-            } catch (err) {
-                setDeepDiveData(prev => ({ ...prev, loading: false }))
-            }
+            } catch (err) { setDeepDiveData(prev => ({ ...prev, loading: false })) }
         }
-
         loadDeepDiveData()
     }, [])
 
-    const handleLogout = async () => {
-        await logoutUser()
-        router.push('/')
-    }
+    const handleLogout = async () => { await logoutUser(); router.push('/') }
 
     if (loading) {
         return (
-            <div style={{
-                minHeight: '100vh',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 50%, #0F766E 100%)'
-            }}>
-                <p style={{ color: 'white' }}>Loading dashboard...</p>
+            <div className="min-h-screen bg-[#070b14] flex items-center justify-center">
+                <div className="w-10 h-10 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
             </div>
         )
     }
 
+    const activeChecklist = checklists.find(c => c.status === 'IN_PROGRESS' || c.status === 'PAUSED')
+    const hasActiveSession = deepDiveData.activeSession && !deepDiveData.loading
+
     return (
-        <div style={{
-            minHeight: '100vh',
-            background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 50%, #0F766E 100%)',
-            color: 'white',
-            padding: 24
-        }}>
-            <div style={{ maxWidth: 1000, margin: '0 auto' }}>
-
-                {/* Header */}
-                <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: 32
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <span style={{ fontSize: 48 }}>{profile?.avatar || '🧭'}</span>
+        <div className="min-h-screen bg-[#070b14] text-white">
+            
+            {/* Fixed Header */}
+            <div className="fixed top-0 left-0 right-0 z-50 bg-[#070b14]/90 backdrop-blur-xl border-b border-white/[0.04]">
+                <div className="max-w-6xl mx-auto px-5 lg:px-8 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/20 flex items-center justify-center text-xl">
+                            {profile?.avatar || '🧭'}
+                        </div>
                         <div>
-                            <h1 style={{ fontSize: 28, fontWeight: 700 }}>Welcome, {profile?.display_name || user?.email}</h1>
-                            <p style={{ color: '#94A3B8', fontSize: 14 }}>
-                                {profile?.education || 'Student'} · {profile?.location || 'Location not set'}
+                            <h1 className="text-white font-bold text-lg leading-tight">
+                                Hey {profile?.display_name?.split(' ')[0] || 'there'}!
+                            </h1>
+                            <p className="text-slate-500 text-xs flex items-center gap-1">
+                                <GraduationCap className="w-3 h-3" />
+                                {profile?.education || 'Student'} · {profile?.location || 'Pakistan'}
                             </p>
                         </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 12 }}>
-                        <Link href="/deep-dive" style={{
-                            padding: '10px 20px',
-                            borderRadius: 10,
-                            background: 'rgba(245,158,11,0.15)',
-                            color: '#F59E0B',
-                            textDecoration: 'none',
-                            fontSize: 14,
-                            fontWeight: 500,
-                            border: '1px solid rgba(245,158,11,0.2)'
-                        }}>
-                            🎯 Deep Dive
+                    <div className="flex items-center gap-2">
+                        <Link href="/deep-dive" className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm font-medium hover:bg-amber-500/20 transition">
+                            <Target className="w-4 h-4" /> Deep Dive
                         </Link>
-                        <Link href="/chat" style={{
-                            padding: '10px 20px',
-                            borderRadius: 10,
-                            background: 'rgba(16,185,129,0.15)',
-                            color: '#10B981',
-                            textDecoration: 'none',
-                            fontSize: 14,
-                            fontWeight: 500,
-                            border: '1px solid rgba(16,185,129,0.2)'
-                        }}>
-                            💬 Chat
+                        <Link href="/journal" className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm font-medium hover:bg-blue-500/20 transition">
+                            <PenLine className="w-4 h-4" /> Journal
                         </Link>
-                        <button
-                            onClick={handleLogout}
-                            style={{
-                                padding: '10px 24px',
-                                background: 'rgba(239,68,68,0.1)',
-                                border: '1px solid rgba(239,68,68,0.3)',
-                                borderRadius: 10,
-                                color: '#EF4444',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            Log Out
+                        <Link href="/deep-dive" className="sm:hidden w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center hover:bg-amber-500/20 transition">
+                            <Target className="w-4 h-4 text-amber-400" />
+                        </Link>
+                        <Link href="/journal" className="sm:hidden w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center hover:bg-blue-500/20 transition">
+                            <PenLine className="w-4 h-4 text-blue-400" />
+                        </Link>
+                        <button onClick={handleLogout} className="w-9 h-9 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center hover:bg-red-500/20 transition">
+                            <LogOut className="w-4 h-4 text-red-400" />
                         </button>
                     </div>
                 </div>
+            </div>
 
-                {/* Stats Cards */}
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                    gap: 16,
-                    marginBottom: 32
-                }}>
-                    {[
-                        { label: 'Profile', value: profile?.is_complete ? '✅ Complete' : '⏳ In Progress' },
-                        { label: 'Onboarding', value: profile?.onboarding_completed ? '✅ Done' : '⏳ Pending' },
-                        { label: 'Interests', value: profile?.interests?.length || 0 },
-                        { label: 'Skills', value: profile?.skills?.length || 0 },
-                    ].map((stat, i) => (
-                        <div key={i} style={{
-                            padding: 20,
-                            background: 'rgba(255,255,255,0.03)',
-                            border: '1px solid rgba(255,255,255,0.06)',
-                            borderRadius: 12
-                        }}>
-                            <p style={{ color: '#94A3B8', fontSize: 13 }}>{stat.label}</p>
-                            <p style={{ fontSize: 20, fontWeight: 600 }}>{stat.value}</p>
+            {/* Content - Mobile: stack | Desktop: 2-column grid */}
+            <div className="pt-24 pb-8 px-4 lg:px-8 max-w-6xl mx-auto">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    
+                    {/* STREAK CARD - Full width */}
+                    <div className="lg:col-span-2 relative overflow-hidden rounded-3xl bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-red-500/10 border border-amber-500/10 p-5 lg:p-6">
+                        <div className="absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'radial-gradient(circle, #f59e0b 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+                        <div className="relative">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Flame className="w-5 h-5 text-amber-400" />
+                                    <span className="text-amber-400 text-xs font-semibold uppercase tracking-wider">Your Streak</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="text-center">
+                                        <p className="text-white font-bold text-sm">{streak.daily_streak}</p>
+                                        <p className="text-slate-600 text-[10px]">Current</p>
+                                    </div>
+                                    <div className="w-px h-8 bg-white/[0.06]" />
+                                    <div className="text-center">
+                                        <p className="text-white font-bold text-sm">{streak.daily_longest}</p>
+                                        <p className="text-slate-600 text-[10px]">Best</p>
+                                    </div>
+                                    <Trophy className="w-5 h-5 text-amber-400/30 hidden sm:block" />
+                                </div>
+                            </div>
+                            <div className="flex items-end gap-3 mt-2">
+                                <span className="text-4xl lg:text-5xl font-black text-white">{streak.daily_streak}</span>
+                                <span className="text-amber-400/60 text-sm lg:text-base mb-1">day streak</span>
+                            </div>
+                            <div className="mt-3 flex items-center gap-2">
+                                <div className="flex-1 bg-white/[0.04] rounded-full h-2 overflow-hidden">
+                                    <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full" style={{ width: `${Math.min((streak.daily_streak / 7) * 100, 100)}%` }} />
+                                </div>
+                                <span className="text-slate-500 text-[10px] lg:text-xs">7d goal</span>
+                            </div>
                         </div>
-                    ))}
-                </div>
-
-                {/* ⭐ CAREER DEEP DIVE SECTION ⭐ */}
-                <div style={{
-                    padding: 24,
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(245,158,11,0.2)',
-                    borderRadius: 12,
-                    marginBottom: 24
-                }}>
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: 16
-                    }}>
-                        <div>
-                            <h2 style={{ fontSize: 18, fontWeight: 600 }}>🎯 Career Deep Dive</h2>
-                            <p style={{ color: '#94A3B8', fontSize: 14, marginTop: 4 }}>
-                                AI-powered career assessment for the Pakistani market
-                            </p>
-                        </div>
-                        <span style={{
-                            padding: '4px 12px',
-                            background: 'rgba(255,255,255,0.05)',
-                            borderRadius: 20,
-                            fontSize: 13,
-                            color: '#94A3B8'
-                        }}>
-                            {deepDiveData.sessionsThisWeek}/2 this week
-                        </span>
                     </div>
 
-                    {deepDiveData.loading ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 0' }}>
-                            <div style={{
-                                width: 20,
-                                height: 20,
-                                border: '2px solid rgba(16,185,129,0.3)',
-                                borderTop: '2px solid #10B981',
-                                borderRadius: '50%',
-                                animation: 'spin 1s linear infinite'
-                            }} />
-                            <p style={{ color: '#94A3B8', fontSize: 14 }}>Loading...</p>
-                        </div>
-                    ) : (
-                        <>
-                            {/* Active Session Banner */}
-                            {deepDiveData.activeSession && (
-                                <div style={{
-                                    padding: 16,
-                                    background: 'rgba(16,185,129,0.08)',
-                                    border: '1px solid rgba(16,185,129,0.2)',
-                                    borderRadius: 10,
-                                    marginBottom: 12
-                                }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div>
-                                            <p style={{ color: '#10B981', fontWeight: 600, fontSize: 14 }}>Session In Progress</p>
-                                            <p style={{ color: '#94A3B8', fontSize: 14, marginTop: 4 }}>
-                                                {deepDiveData.activeSession.resumed
-                                                    ? `You've answered ${deepDiveData.activeSession.total_answered} questions. Continue where you left off.`
-                                                    : 'Ready to begin your assessment'}
-                                            </p>
-                                        </div>
-                                        <Link
-                                            href="/deep-dive"
-                                            style={{
-                                                padding: '10px 20px',
-                                                background: '#10B981',
-                                                borderRadius: 8,
-                                                color: 'white',
-                                                textDecoration: 'none',
-                                                fontSize: 14,
-                                                fontWeight: 600,
-                                                whiteSpace: 'nowrap'
-                                            }}
-                                        >
-                                            {deepDiveData.activeSession.resumed ? 'Continue' : 'Start'}
-                                        </Link>
-                                    </div>
+                    {/* ACTIVE SESSION - Left column on desktop */}
+                    {hasActiveSession && (
+                        <Link href="/deep-dive" className="block relative overflow-hidden rounded-3xl bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border border-emerald-500/20 p-5 lg:p-6 group hover:border-emerald-500/30 transition-all">
+                            <div className="absolute top-4 right-4 w-20 h-20 rounded-full bg-emerald-500/10 blur-2xl group-hover:bg-emerald-500/20 transition-all hidden lg:block" />
+                            <div className="relative">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Compass className="w-5 h-5 text-emerald-400" />
+                                    <span className="text-emerald-400 text-xs font-semibold uppercase tracking-wider">Session In Progress</span>
                                 </div>
-                            )}
-
-                            {/* Latest Report */}
-                            {deepDiveData.latestReport && (
-                                <div style={{
-                                    padding: 16,
-                                    background: 'rgba(255,255,255,0.03)',
-                                    borderRadius: 10,
-                                    marginBottom: 12
-                                }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div>
-                                            <p style={{ color: 'white', fontWeight: 600, fontSize: 14 }}>Latest Report</p>
-                                            <p style={{ color: '#94A3B8', fontSize: 13, marginTop: 4 }}>
-                                                Session {deepDiveData.latestReport.session?.session_number} • {new Date(deepDiveData.latestReport.generated_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'long', year: 'numeric' })}
-                                            </p>
-                                        </div>
-                                        <Link
-                                            href={`/report/${deepDiveData.latestReport.session_id}`}
-                                            style={{
-                                                color: '#10B981',
-                                                textDecoration: 'none',
-                                                fontSize: 14,
-                                                fontWeight: 500
-                                            }}
-                                        >
-                                            View Report →
-                                        </Link>
-                                    </div>
+                                <h2 className="text-xl lg:text-2xl font-bold text-white mb-1">
+                                    {deepDiveData.activeSession.resumed ? 'Continue where you left off' : 'Ready to begin'}
+                                </h2>
+                                <p className="text-slate-400 text-sm mb-4">
+                                    {deepDiveData.activeSession.resumed 
+                                        ? `${deepDiveData.activeSession.total_answered} questions answered` 
+                                        : 'Start your career discovery journey'}
+                                </p>
+                                <div className="inline-flex items-center gap-2 px-5 py-2.5 lg:px-6 lg:py-3 bg-emerald-500 text-white rounded-2xl font-semibold text-sm lg:text-base group-hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20">
+                                    {deepDiveData.activeSession.resumed ? 'Continue' : 'Start'}
+                                    <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5 group-hover:translate-x-1 transition-transform" />
                                 </div>
-                            )}
-
-                            {/* No Session or Report Yet */}
-                            {!deepDiveData.activeSession && !deepDiveData.latestReport && (
-                                <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                                    <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
-                                    <p style={{ color: '#94A3B8', fontSize: 14, marginBottom: 16 }}>
-                                        Take a 20-minute assessment and get personalized career guidance for the Pakistani job market.
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Action Button */}
-                            {!deepDiveData.activeSession && (
-                                <Link
-                                    href="/deep-dive"
-                                    onClick={(e) => {
-                                        if (deepDiveData.sessionsThisWeek >= 2) {
-                                            e.preventDefault()
-                                        }
-                                    }}
-                                    style={{
-                                        display: 'block',
-                                        width: '100%',
-                                        textAlign: 'center',
-                                        padding: '14px',
-                                        borderRadius: 10,
-                                        fontWeight: 600,
-                                        fontSize: 14,
-                                        textDecoration: 'none',
-                                        background: deepDiveData.sessionsThisWeek >= 2
-                                            ? 'rgba(255,255,255,0.05)'
-                                            : '#10B981',
-                                        color: deepDiveData.sessionsThisWeek >= 2
-                                            ? '#64748B'
-                                            : 'white',
-                                        cursor: deepDiveData.sessionsThisWeek >= 2
-                                            ? 'not-allowed'
-                                            : 'pointer'
-                                    }}
-                                >
-                                    {deepDiveData.sessionsThisWeek >= 2
-                                        ? 'Weekly Limit Reached — Available Next Week'
-                                        : deepDiveData.latestReport
-                                            ? 'Start New Deep Dive'
-                                            : 'Start Your First Deep Dive'}
-                                </Link>
-                            )}
-                        </>
+                            </div>
+                        </Link>
                     )}
-                </div>
 
-                {/* Past Sessions */}
-                {deepDiveData.pastSessions.length > 0 && (
-                    <div style={{
-                        padding: 24,
-                        background: 'rgba(255,255,255,0.03)',
-                        border: '1px solid rgba(255,255,255,0.06)',
-                        borderRadius: 12,
-                        marginBottom: 24
-                    }}>
-                        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>📚 Past Deep Dives</h2>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {deepDiveData.pastSessions.map((session) => (
-                                <Link
-                                    key={session.session_id}
-                                    href={`/report/${session.session_id}`}
-                                    style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        padding: 12,
-                                        background: 'rgba(255,255,255,0.03)',
-                                        borderRadius: 8,
-                                        textDecoration: 'none',
-                                        color: 'white'
-                                    }}
-                                >
-                                    <div>
-                                        <p style={{ fontWeight: 500, fontSize: 14 }}>Session {session.session?.session_number}</p>
-                                        <p style={{ color: '#94A3B8', fontSize: 13, marginTop: 2 }}>
-                                            {session.session?.question_count || '?'} questions • {new Date(session.generated_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                        </p>
-                                    </div>
-                                    <span style={{ color: '#10B981', fontSize: 14 }}>View →</span>
-                                </Link>
-                            ))}
+                    {/* JOURNAL CARD - Right column on desktop */}
+                    <Link href="/journal" className="block relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-purple-500/10 border border-blue-500/10 p-5 lg:p-6 group hover:border-blue-500/20 transition-all">
+                        <div className="absolute bottom-3 right-3 w-20 h-20 rounded-full bg-blue-500/10 blur-2xl group-hover:bg-blue-500/20 transition-all hidden lg:block" />
+                        <div className="relative">
+                            <div className="flex items-center gap-2 mb-2">
+                                <BookOpen className="w-5 h-5 text-blue-400" />
+                                <span className="text-blue-400 text-xs font-semibold uppercase tracking-wider">Daily Journal</span>
+                            </div>
+                            <h2 className="text-xl lg:text-2xl font-bold text-white mb-1">Write today's entry</h2>
+                            <p className="text-slate-400 text-sm mb-4">Log progress, mood & learning hours. Get AI feedback.</p>
+                            <div className="inline-flex items-center gap-2 px-5 py-2.5 lg:px-6 lg:py-3 bg-blue-500/20 border border-blue-500/30 text-blue-400 rounded-2xl font-semibold text-sm lg:text-base group-hover:bg-blue-500/30 transition-all">
+                                Open Journal <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5 group-hover:translate-x-1 transition-transform" />
+                            </div>
                         </div>
-                    </div>
-                )}
-
-                {/* ⭐ CHAT CARD ⭐ */}
-                <div style={{
-                    padding: 24,
-                    background: 'rgba(16,185,129,0.06)',
-                    border: '1px solid rgba(16,185,129,0.15)',
-                    borderRadius: 12,
-                    marginBottom: 24,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: 16
-                }}>
-                    <div>
-                        <h3 style={{ fontSize: 18, fontWeight: 600 }}>💬 Talk to Your Career Coach</h3>
-                        <p style={{ color: '#94A3B8', fontSize: 14, marginTop: 4 }}>
-                            Get personalized advice based on your skills, interests, and goals
-                        </p>
-                    </div>
-                    <Link href="/chat" style={{
-                        padding: '12px 28px',
-                        background: '#10B981',
-                        borderRadius: 10,
-                        color: 'white',
-                        textDecoration: 'none',
-                        fontWeight: 600,
-                        boxShadow: '0 4px 16px rgba(16,185,129,0.3)'
-                    }}>
-                        Start Chat →
                     </Link>
-                </div>
 
-                {/* Tab Navigation */}
-                <div style={{
-                    display: 'flex',
-                    gap: 4,
-                    marginBottom: 24,
-                    borderBottom: '1px solid rgba(255,255,255,0.06)',
-                    paddingBottom: 4
-                }}>
-                    {['overview', 'answers', 'preferences'].map(tab => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            style={{
-                                padding: '12px 24px',
-                                background: activeTab === tab ? 'rgba(16,185,129,0.15)' : 'transparent',
-                                border: 'none',
-                                borderRadius: 8,
-                                color: activeTab === tab ? '#10B981' : '#94A3B8',
-                                cursor: 'pointer',
-                                fontWeight: activeTab === tab ? 600 : 400,
-                                textTransform: 'capitalize'
-                            }}
-                        >
-                            {tab}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Tab Content */}
-                <div>
-                    {activeTab === 'overview' && (
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-                            gap: 20
-                        }}>
-                            <div style={{
-                                padding: 24,
-                                background: 'rgba(255,255,255,0.03)',
-                                border: '1px solid rgba(255,255,255,0.06)',
-                                borderRadius: 12
-                            }}>
-                                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>🎯 Interests</h3>
-                                {profile?.interests?.length > 0 ? (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {profile.interests.map((interest, i) => (
-                                            <span key={i} style={{
-                                                padding: '6px 14px',
-                                                background: 'rgba(16,185,129,0.1)',
-                                                border: '1px solid rgba(16,185,129,0.2)',
-                                                borderRadius: 20,
-                                                fontSize: 13,
-                                                color: '#10B981'
-                                            }}>
-                                                {interest}
-                                            </span>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p style={{ color: '#64748B', fontSize: 14 }}>No interests added yet</p>
-                                )}
-                            </div>
-
-                            <div style={{
-                                padding: 24,
-                                background: 'rgba(255,255,255,0.03)',
-                                border: '1px solid rgba(255,255,255,0.06)',
-                                borderRadius: 12
-                            }}>
-                                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>🛠️ Skills</h3>
-                                {profile?.skills?.length > 0 ? (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                        {profile.skills.map((skill, i) => (
-                                            <span key={i} style={{
-                                                padding: '6px 14px',
-                                                background: 'rgba(59,130,246,0.1)',
-                                                border: '1px solid rgba(59,130,246,0.2)',
-                                                borderRadius: 20,
-                                                fontSize: 13,
-                                                color: '#60A5FA'
-                                            }}>
-                                                {skill}
-                                            </span>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p style={{ color: '#64748B', fontSize: 14 }}>No skills added yet</p>
-                                )}
-                            </div>
-
-                            <div style={{
-                                padding: 24,
-                                background: 'rgba(255,255,255,0.03)',
-                                border: '1px solid rgba(255,255,255,0.06)',
-                                borderRadius: 12
-                            }}>
-                                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>📋 Info</h3>
-                                <div style={{ marginBottom: 8 }}>
-                                    <p style={{ color: '#64748B', fontSize: 13 }}>Education</p>
-                                    <p style={{ fontSize: 15 }}>{profile?.education || 'Not set'}</p>
+                    {/* MONTHLY PLAN - Left */}
+                    {activeChecklist && (
+                        <Link href={`/checklist/${activeChecklist.checklist_id}`} className="block relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-500/10 via-pink-500/10 to-fuchsia-500/10 border border-rose-500/10 p-5 lg:p-6 group hover:border-rose-500/20 transition-all">
+                            <div className="relative">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <ClipboardList className="w-5 h-5 text-rose-400" />
+                                    <span className="text-rose-400 text-xs font-semibold uppercase tracking-wider">Monthly Action Plan</span>
                                 </div>
-                                <div>
-                                    <p style={{ color: '#64748B', fontSize: 13 }}>Location</p>
-                                    <p style={{ fontSize: 15 }}>{profile?.location || 'Not set'}</p>
+                                <h2 className="text-xl lg:text-2xl font-bold text-white mb-3">Month {activeChecklist.month_number}</h2>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="flex-1 bg-white/[0.04] rounded-full h-2.5 overflow-hidden">
+                                        <div className="h-full bg-gradient-to-r from-rose-500 to-pink-500 rounded-full transition-all" 
+                                            style={{ width: `${activeChecklist.items?.length ? Math.round((activeChecklist.items.filter(i => i.completed).length / activeChecklist.items.length) * 100) : 0}%` }} />
+                                    </div>
+                                    <span className="text-rose-400 text-sm font-semibold">
+                                        {activeChecklist.items?.filter(i => i.completed).length || 0}/{activeChecklist.items?.length || 0}
+                                    </span>
                                 </div>
-                            </div>
-
-                            <div style={{
-                                padding: 24,
-                                background: 'rgba(255,255,255,0.03)',
-                                border: '1px solid rgba(255,255,255,0.06)',
-                                borderRadius: 12
-                            }}>
-                                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>🎯 Career Goals</h3>
-                                <p style={{ fontSize: 14, color: '#94A3B8' }}>
-                                    {profile?.preferences?.career_goals || 'No career goals set yet'}
+                                <p className="text-slate-400 text-sm">
+                                    {activeChecklist.status === 'IN_PROGRESS' ? '⏳ In progress — keep going!' : '⏸️ Paused — resume when ready'}
                                 </p>
                             </div>
-                        </div>
+                        </Link>
                     )}
 
-                    {activeTab === 'answers' && (
-                        <div>
-                            {profile?.onboarding_answers?.length > 0 ? (
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: '1fr',
-                                    gap: 16
-                                }}>
-                                    {profile.onboarding_answers.map((item, i) => (
-                                        <div key={i} style={{
-                                            padding: 20,
-                                            background: 'rgba(255,255,255,0.03)',
-                                            border: '1px solid rgba(255,255,255,0.06)',
-                                            borderRadius: 12
-                                        }}>
-                                            <p style={{
-                                                color: '#10B981',
-                                                fontSize: 13,
-                                                fontWeight: 600,
-                                                marginBottom: 4
-                                            }}>
-                                                Question {item.questionId || i + 1}
-                                            </p>
-                                            <p style={{
-                                                fontSize: 15,
-                                                fontWeight: 500,
-                                                marginBottom: 8
-                                            }}>
-                                                {item.question}
-                                            </p>
-                                            <p style={{
-                                                fontSize: 14,
-                                                color: '#94A3B8',
-                                                padding: 12,
-                                                background: 'rgba(255,255,255,0.03)',
-                                                borderRadius: 8,
-                                                borderLeft: '3px solid #10B981'
-                                            }}>
-                                                {item.answer}
-                                            </p>
-                                        </div>
+                    {/* START DEEP DIVE (no active session) - Left */}
+                    {!hasActiveSession && (
+                        <Link href="/deep-dive" onClick={(e) => { if (deepDiveData.sessionsThisWeek >= 2) e.preventDefault() }}
+                            className={`block relative overflow-hidden rounded-3xl p-5 lg:p-8 text-center border group transition-all ${
+                                deepDiveData.sessionsThisWeek >= 2
+                                    ? 'bg-white/[0.01] border-white/[0.03] cursor-not-allowed'
+                                    : 'bg-gradient-to-br from-violet-500/10 via-purple-500/10 to-fuchsia-500/10 border-violet-500/10 hover:border-violet-500/20'
+                            }`}>
+                            <div className="relative py-4 lg:py-6">
+                                <Target className={`w-12 h-12 lg:w-16 lg:h-16 mx-auto mb-4 ${deepDiveData.sessionsThisWeek >= 2 ? 'text-slate-600' : 'text-violet-400'}`} />
+                                <h2 className="text-xl lg:text-2xl font-bold text-white mb-2">
+                                    {deepDiveData.sessionsThisWeek >= 2 ? 'Weekly Limit Reached' : deepDiveData.latestReport ? 'Start a New Deep Dive' : 'Start Your First Deep Dive'}
+                                </h2>
+                                <p className="text-slate-500 text-sm lg:text-base max-w-md mx-auto">
+                                    {deepDiveData.sessionsThisWeek >= 2 ? 'Come back next week for more sessions!' : '20-minute AI conversation · Personalized 6-month career roadmap'}
+                                </p>
+                                <div className="mt-4 text-slate-600 text-sm">{deepDiveData.sessionsThisWeek}/2 sessions this week</div>
+                            </div>
+                        </Link>
+                    )}
+
+                    {/* LATEST REPORT - Right */}
+                    {deepDiveData.latestReport && (
+                        <Link href={`/report/${deepDiveData.latestReport.session_id}`} className="block relative overflow-hidden rounded-3xl bg-gradient-to-br from-cyan-500/10 via-teal-500/10 to-emerald-500/10 border border-cyan-500/10 p-5 lg:p-6 group hover:border-cyan-500/20 transition-all">
+                            <div className="relative">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Brain className="w-5 h-5 text-cyan-400" />
+                                    <span className="text-cyan-400 text-xs font-semibold uppercase tracking-wider">Latest Report</span>
+                                </div>
+                                <h2 className="text-xl lg:text-2xl font-bold text-white mb-1">Session {deepDiveData.latestReport.session?.session_number}</h2>
+                                <p className="text-slate-400 text-sm mb-4">
+                                    {new Date(deepDiveData.latestReport.generated_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                </p>
+                                <div className="inline-flex items-center gap-2 px-5 py-2.5 lg:px-6 lg:py-3 bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 rounded-2xl font-semibold text-sm lg:text-base group-hover:bg-cyan-500/30 transition-all">
+                                    View Report <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5 group-hover:translate-x-1 transition-transform" />
+                                </div>
+                            </div>
+                        </Link>
+                    )}
+
+                    {/* PAST SESSIONS + MONTHLY PLANS - Side by side on desktop */}
+                    <div className="lg:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        
+                        {/* PAST SESSIONS */}
+                        {deepDiveData.pastSessions.length > 0 && (
+                            <div className="rounded-3xl bg-white/[0.01] border border-white/[0.03] p-5 lg:p-6">
+                                <h3 className="text-white font-semibold text-sm lg:text-base mb-4 flex items-center gap-2">
+                                    <Sparkles className="w-4 h-4 text-slate-400" /> Past Deep Dives
+                                </h3>
+                                <div className="space-y-2">
+                                    {deepDiveData.pastSessions.map((session) => (
+                                        <Link key={session.session_id} href={`/report/${session.session_id}`}
+                                            className="flex items-center justify-between p-3 lg:p-4 rounded-2xl bg-white/[0.02] border border-white/[0.03] hover:bg-white/[0.04] transition-all group">
+                                            <div>
+                                                <p className="text-white text-sm font-medium">Session {session.session?.session_number}</p>
+                                                <p className="text-slate-500 text-xs mt-0.5">
+                                                    {session.session?.question_count || '?'} questions · {new Date(session.generated_at).toLocaleDateString('en-PK', { day: 'numeric', month: 'short' })}
+                                                </p>
+                                            </div>
+                                            <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors" />
+                                        </Link>
                                     ))}
                                 </div>
-                            ) : (
-                                <div style={{
-                                    padding: 40,
-                                    textAlign: 'center',
-                                    background: 'rgba(255,255,255,0.03)',
-                                    border: '1px solid rgba(255,255,255,0.06)',
-                                    borderRadius: 12
-                                }}>
-                                    <p style={{ color: '#64748B', fontSize: 16 }}>No onboarding answers yet.</p>
-                                    <Link href="/onboarding" style={{
-                                        color: '#10B981',
-                                        textDecoration: 'none',
-                                        fontWeight: 600
-                                    }}>
-                                        Start Onboarding →
-                                    </Link>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {activeTab === 'preferences' && (
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-                            gap: 20
-                        }}>
-                            <div style={{
-                                padding: 24,
-                                background: 'rgba(255,255,255,0.03)',
-                                border: '1px solid rgba(255,255,255,0.06)',
-                                borderRadius: 12
-                            }}>
-                                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>💼 Work Environment</h3>
-                                <p style={{ fontSize: 15 }}>
-                                    {profile?.preferences?.work_environment || 'Not specified'}
-                                </p>
                             </div>
-
-                            <div style={{
-                                padding: 24,
-                                background: 'rgba(255,255,255,0.03)',
-                                border: '1px solid rgba(255,255,255,0.06)',
-                                borderRadius: 12
-                            }}>
-                                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>📊 Profile Status</h3>
-                                <div style={{ marginBottom: 8 }}>
-                                    <p style={{ color: '#64748B', fontSize: 13 }}>Profile Complete</p>
-                                    <p style={{ fontSize: 15 }}>{profile?.is_complete ? '✅ Yes' : '⏳ No'}</p>
-                                </div>
-                                <div>
-                                    <p style={{ color: '#64748B', fontSize: 13 }}>Onboarding Done</p>
-                                    <p style={{ fontSize: 15 }}>{profile?.onboarding_completed ? '✅ Yes' : '⏳ No'}</p>
-                                </div>
-                            </div>
-
-                            <div style={{
-                                padding: 24,
-                                background: 'rgba(255,255,255,0.03)',
-                                border: '1px solid rgba(255,255,255,0.06)',
-                                borderRadius: 12,
-                                gridColumn: '1 / -1'
-                            }}>
-                                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>📝 Account Info</h3>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                                    <div>
-                                        <p style={{ color: '#64748B', fontSize: 13 }}>Email</p>
-                                        <p style={{ fontSize: 15 }}>{user?.email}</p>
-                                    </div>
-                                    <div>
-                                        <p style={{ color: '#64748B', fontSize: 13 }}>User ID</p>
-                                        <p style={{ fontSize: 13, color: '#64748B', fontFamily: 'monospace' }}>
-                                            {user?.id?.slice(0, 16)}...
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Next Steps */}
-                <div style={{
-                    marginTop: 32,
-                    padding: 24,
-                    background: 'rgba(16,185,129,0.08)',
-                    border: '1px solid rgba(16,185,129,0.15)',
-                    borderRadius: 12
-                }}>
-                    <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>📋 Next Steps</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {/* Deep Dive Button */}
-                        <Link href="/deep-dive" style={{
-                            padding: '14px 20px',
-                            background: 'rgba(245,158,11,0.15)',
-                            borderRadius: 8,
-                            color: '#F59E0B',
-                            textDecoration: 'none',
-                            fontWeight: 600,
-                            border: '1px solid rgba(245,158,11,0.2)',
-                            textAlign: 'center'
-                        }}>
-                            🎯 Start Career Deep Dive
-                        </Link>
-
-                        {/* Chat Button */}
-                        <Link href="/chat" style={{
-                            padding: '14px 20px',
-                            background: 'rgba(16,185,129,0.15)',
-                            borderRadius: 8,
-                            color: '#10B981',
-                            textDecoration: 'none',
-                            fontWeight: 600,
-                            border: '1px solid rgba(16,185,129,0.2)',
-                            textAlign: 'center'
-                        }}>
-                            💬 Talk to Your Career Coach
-                        </Link>
-
-                        {!profile?.is_complete && (
-                            <Link href="/setup-profile" style={{
-                                padding: '12px 16px',
-                                background: 'rgba(255,255,255,0.05)',
-                                borderRadius: 8,
-                                color: 'white',
-                                textDecoration: 'none'
-                            }}>
-                                ✏️ Complete Your Profile
-                            </Link>
                         )}
-                        {profile?.is_complete && !profile?.onboarding_completed && (
-                            <Link href="/onboarding" style={{
-                                padding: '12px 16px',
-                                background: 'rgba(16,185,129,0.15)',
-                                borderRadius: 8,
-                                color: '#10B981',
-                                textDecoration: 'none',
-                                fontWeight: 600
-                            }}>
-                                🧠 Complete AI Career Counseling
-                            </Link>
+
+                        {/* MONTHLY PLANS LIST */}
+                        {!checklistsLoading && checklists.length > 0 && (
+                            <div className="rounded-3xl bg-white/[0.01] border border-white/[0.03] p-5 lg:p-6">
+                                <h3 className="text-white font-semibold text-sm lg:text-base mb-4 flex items-center gap-2">
+                                    <ClipboardList className="w-4 h-4 text-blue-400" /> Monthly Action Plans
+                                </h3>
+                                <div className="space-y-2">
+                                    {checklists.map((cl) => {
+                                        const completed = cl.items?.filter(i => i.completed).length || 0
+                                        const total = cl.items?.length || 0
+                                        const progress = total > 0 ? Math.round((completed / total) * 100) : 0
+                                        return (
+                                            <Link key={cl.checklist_id} href={`/checklist/${cl.checklist_id}`}
+                                                className="block p-3 lg:p-4 rounded-2xl bg-white/[0.02] border border-white/[0.03] hover:bg-white/[0.04] transition-all group">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-white text-sm font-medium">Month {cl.month_number}</p>
+                                                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                                            cl.status === 'IN_PROGRESS' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
+                                                            cl.status === 'PAUSED' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' :
+                                                            cl.status === 'COMPLETED' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
+                                                            'text-slate-400 bg-white/[0.03] border-white/[0.05]'
+                                                        }`}>
+                                                            {cl.status === 'IN_PROGRESS' ? 'Active' : cl.status === 'PAUSED' ? 'Paused' : cl.status === 'COMPLETED' ? 'Done' : 'Ready'}
+                                                        </span>
+                                                    </div>
+                                                    <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors" />
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex-1 bg-white/[0.04] rounded-full h-1.5 overflow-hidden">
+                                                        <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                                                    </div>
+                                                    <span className="text-slate-500 text-[10px]">{completed}/{total}</span>
+                                                </div>
+                                            </Link>
+                                        )
+                                    })}
+                                </div>
+                            </div>
                         )}
                     </div>
-                </div>
 
+                    {/* TABS - Full width */}
+                    <div className="lg:col-span-2 rounded-3xl bg-white/[0.01] border border-white/[0.03] p-5 lg:p-6">
+                        <div className="flex gap-1 mb-5 border-b border-white/[0.04] pb-3">
+                            {['overview', 'answers', 'preferences'].map(tab => (
+                                <button key={tab} onClick={() => setActiveTab(tab)}
+                                    className={`px-4 lg:px-6 py-2 rounded-xl text-xs lg:text-sm font-semibold capitalize transition-all ${
+                                        activeTab === tab ? 'bg-emerald-500/10 text-emerald-400' : 'text-slate-500 hover:text-slate-300'
+                                    }`}>
+                                    {tab}
+                                </button>
+                            ))}
+                        </div>
+
+                        {activeTab === 'overview' && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-4">
+                                    <h3 className="text-white text-sm font-semibold mb-3 flex items-center gap-2"><Target className="w-4 h-4 text-emerald-400" /> Interests</h3>
+                                    {profile?.interests?.length > 0 ? (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {profile.interests.map((interest, i) => (
+                                                <span key={i} className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/20">{interest}</span>
+                                            ))}
+                                        </div>
+                                    ) : <p className="text-slate-600 text-xs">No interests added</p>}
+                                </div>
+                                <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-4">
+                                    <h3 className="text-white text-sm font-semibold mb-3 flex items-center gap-2"><Zap className="w-4 h-4 text-blue-400" /> Skills</h3>
+                                    {profile?.skills?.length > 0 ? (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {profile.skills.map((skill, i) => (
+                                                <span key={i} className="text-xs bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-full border border-blue-500/20">{skill}</span>
+                                            ))}
+                                        </div>
+                                    ) : <p className="text-slate-600 text-xs">No skills added</p>}
+                                </div>
+                                <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-4">
+                                    <h3 className="text-white text-sm font-semibold mb-3 flex items-center gap-2"><MapPin className="w-4 h-4 text-purple-400" /> Info</h3>
+                                    <div className="space-y-2">
+                                        <div><p className="text-slate-500 text-[10px] uppercase">Education</p><p className="text-white text-sm">{profile?.education || 'Not set'}</p></div>
+                                        <div><p className="text-slate-500 text-[10px] uppercase">Location</p><p className="text-white text-sm">{profile?.location || 'Not set'}</p></div>
+                                    </div>
+                                </div>
+                                <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-4">
+                                    <h3 className="text-white text-sm font-semibold mb-3 flex items-center gap-2"><Star className="w-4 h-4 text-amber-400" /> Career Goals</h3>
+                                    <p className="text-slate-400 text-sm">{profile?.preferences?.career_goals || 'Not set yet'}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'answers' && (
+                            <div>
+                                {profile?.onboarding_answers?.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {profile.onboarding_answers.map((item, i) => (
+                                            <div key={i} className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-4">
+                                                <p className="text-emerald-400 text-xs font-semibold mb-1">Question {item.questionId || i + 1}</p>
+                                                <p className="text-white text-sm font-medium mb-2">{item.question}</p>
+                                                <p className="text-slate-400 text-sm bg-white/[0.02] rounded-xl p-3 border-l-2 border-emerald-500/30">{item.answer}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-10">
+                                        <p className="text-slate-500 text-sm mb-3">No onboarding answers yet.</p>
+                                        <Link href="/onboarding" className="text-emerald-400 font-semibold text-sm">Start Onboarding →</Link>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'preferences' && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-4">
+                                    <h3 className="text-white text-sm font-semibold mb-2">💼 Work Environment</h3>
+                                    <p className="text-slate-300 text-sm">{profile?.preferences?.work_environment || 'Not specified'}</p>
+                                </div>
+                                <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-4">
+                                    <h3 className="text-white text-sm font-semibold mb-2">📊 Profile Status</h3>
+                                    <div className="space-y-1">
+                                        <div className="flex justify-between"><span className="text-slate-500 text-xs">Complete</span><span>{profile?.is_complete ? '✅' : '⏳'}</span></div>
+                                        <div className="flex justify-between"><span className="text-slate-500 text-xs">Onboarding</span><span>{profile?.onboarding_completed ? '✅' : '⏳'}</span></div>
+                                    </div>
+                                </div>
+                                <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl p-4 sm:col-span-2">
+                                    <h3 className="text-white text-sm font-semibold mb-2">📝 Account Info</h3>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div><p className="text-slate-500 text-[10px] uppercase">Email</p><p className="text-white text-sm">{user?.email}</p></div>
+                                        <div><p className="text-slate-500 text-[10px] uppercase">User ID</p><p className="text-slate-500 text-xs font-mono">{user?.id?.slice(0, 16)}...</p></div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* NEXT STEPS - Full width */}
+                    <div className="lg:col-span-2 rounded-3xl bg-gradient-to-br from-emerald-500/5 to-teal-500/5 border border-emerald-500/10 p-5 lg:p-6">
+                        <h3 className="text-white font-semibold text-sm lg:text-base mb-4 flex items-center gap-2"><Sparkles className="w-4 h-4 text-emerald-400" /> Next Steps</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                            <Link href="/deep-dive" className="block p-3.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-2xl font-semibold text-sm text-center hover:bg-amber-500/20 transition">
+                                🎯 Career Deep Dive
+                            </Link>
+                            <Link href="/journal" className="block p-3.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-2xl font-semibold text-sm text-center hover:bg-blue-500/20 transition">
+                                📝 Daily Journal
+                            </Link>
+                            {!profile?.is_complete && (
+                                <Link href="/setup-profile" className="block p-3 bg-white/[0.03] border border-white/[0.05] text-slate-400 rounded-2xl text-sm text-center hover:bg-white/[0.06] transition">
+                                    ✏️ Complete Profile
+                                </Link>
+                            )}
+                            {profile?.is_complete && !profile?.onboarding_completed && (
+                                <Link href="/onboarding" className="block p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl font-semibold text-sm text-center hover:bg-emerald-500/20 transition">
+                                    🧠 Complete Counseling
+                                </Link>
+                            )}
+                        </div>
+                    </div>
+
+                </div>
             </div>
         </div>
     )

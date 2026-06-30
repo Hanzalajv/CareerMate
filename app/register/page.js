@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { registerUser, getCurrentUser } from '@/lib/auth'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Compass, Mail, Lock, User, ArrowRight, Eye, EyeOff, Check, X } from 'lucide-react'
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('')
@@ -12,59 +13,43 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [focused, setFocused] = useState('')
   const router = useRouter()
 
-  // Check if user is already logged in
+  // Password validation checks
+  const checks = {
+    length: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[!@#$%^&*]/.test(password),
+    match: password === confirmPassword && confirmPassword.length > 0
+  }
+
   useEffect(() => {
     getCurrentUser().then(u => {
-      if (u) {
-        router.replace('/dashboard')
-      } else {
-        setChecking(false)
-      }
+      if (u) router.replace('/dashboard')
+      else setChecking(false)
     })
   }, [])
 
-  // Show nothing while checking
   if (checking) return null
 
   async function handleRegister(e) {
     e.preventDefault()
     setError('')
 
-    // Validation
-    if (!displayName.trim()) {
-      setError('Please enter your full name.')
-      return
-    }
-    if (!email.trim()) {
-      setError('Please enter your email address.')
-      return
-    }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
-      return
-    }
-    if (!/[A-Z]/.test(password)) {
-      setError('Password must contain at least one uppercase letter.')
-      return
-    }
-    if (!/[0-9]/.test(password)) {
-      setError('Password must contain at least one number.')
-      return
-    }
-    if (!/[!@#$%^&*]/.test(password)) {
-      setError('Password must contain at least one special character (!@#$%^&*).')
-      return
-    }
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
-      return
-    }
+    if (!displayName.trim()) { setError('Please enter your full name.'); return }
+    if (!email.trim()) { setError('Please enter your email address.'); return }
+    if (!checks.length) { setError('Password must be at least 8 characters.'); return }
+    if (!checks.uppercase) { setError('Password must contain at least one uppercase letter.'); return }
+    if (!checks.number) { setError('Password must contain at least one number.'); return }
+    if (!checks.special) { setError('Password must contain at least one special character.'); return }
+    if (!checks.match) { setError('Passwords do not match.'); return }
 
     setLoading(true)
     const { user, error: authError } = await registerUser(email, password, displayName)
-    console.log('Register result:', user, authError)
     setLoading(false)
 
     if (authError) {
@@ -75,154 +60,166 @@ export default function RegisterPage() {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(160deg, #0F172A 0%, #1E293B 50%, #0F766E 100%)',
-      padding: 24
-    }}>
-      <form onSubmit={handleRegister} style={{
-        background: 'rgba(255,255,255,0.03)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 20, padding: 48, width: '100%', maxWidth: 420,
-        boxShadow: '0 25px 60px rgba(0,0,0,0.3)'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: 36 }}>
-          <span style={{ fontSize: 40 }}>🧭</span>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: 'white', marginTop: 12, letterSpacing: -1 }}>
-            Join CareerMate
-          </h1>
-          <p style={{ color: '#94A3B8', fontSize: 14, marginTop: 8 }}>
-            Your AI career coach that actually knows you.
+    <div className="min-h-screen flex items-center justify-center bg-[#070b14] relative overflow-hidden p-6">
+      {/* Background effects */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-[-30%] left-[-20%] w-[600px] h-[600px] rounded-full bg-blue-500/[0.04] blur-[150px]" />
+        <div className="absolute bottom-[-30%] right-[-20%] w-[500px] h-[500px] rounded-full bg-emerald-500/[0.04] blur-[140px]" />
+      </div>
+
+      {/* Grid texture */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.02]" style={{
+        backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)',
+        backgroundSize: '50px 50px'
+      }} />
+
+      <form onSubmit={handleRegister} className="relative z-10 w-full max-w-md">
+        {/* Card */}
+        <div className="bg-white/[0.02] backdrop-blur-2xl border border-white/[0.06] rounded-3xl p-8 lg:p-10 shadow-2xl shadow-black/50">
+          
+          {/* Logo + Title */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/20 via-emerald-500/20 to-cyan-500/20 border border-white/10 mb-5">
+              <Compass className="w-8 h-8 text-emerald-400" />
+            </div>
+            <h1 className="text-2xl font-bold text-white mb-2">Join CareerMate</h1>
+            <p className="text-slate-500 text-sm">Start your career discovery journey.</p>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6 flex items-start gap-3">
+              <X className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+
+          {/* Full Name */}
+          <div className="mb-5">
+            <label className="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Full Name</label>
+            <div className={`relative rounded-xl border transition-all duration-300 ${focused === 'name' ? 'border-emerald-500/50 bg-white/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
+              <User className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${focused === 'name' ? 'text-emerald-400' : 'text-slate-600'}`} />
+              <input
+                type="text"
+                placeholder="Your full name"
+                value={displayName}
+                onChange={e => setDisplayName(e.target.value)}
+                onFocus={() => setFocused('name')}
+                onBlur={() => setFocused('')}
+                className="w-full bg-transparent text-white placeholder-slate-600 text-sm py-3.5 pl-11 pr-4 rounded-xl outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Email */}
+          <div className="mb-5">
+            <label className="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Email Address</label>
+            <div className={`relative rounded-xl border transition-all duration-300 ${focused === 'email' ? 'border-emerald-500/50 bg-white/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
+              <Mail className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${focused === 'email' ? 'text-emerald-400' : 'text-slate-600'}`} />
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onFocus={() => setFocused('email')}
+                onBlur={() => setFocused('')}
+                className="w-full bg-transparent text-white placeholder-slate-600 text-sm py-3.5 pl-11 pr-4 rounded-xl outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Password */}
+          <div className="mb-5">
+            <label className="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Password</label>
+            <div className={`relative rounded-xl border transition-all duration-300 ${focused === 'password' ? 'border-emerald-500/50 bg-white/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
+              <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${focused === 'password' ? 'text-emerald-400' : 'text-slate-600'}`} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Create a strong password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                onFocus={() => setFocused('password')}
+                onBlur={() => setFocused('')}
+                className="w-full bg-transparent text-white placeholder-slate-600 text-sm py-3.5 pl-11 pr-12 rounded-xl outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {/* Password strength indicators */}
+            {password.length > 0 && (
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                {[
+                  { label: '8+ characters', passed: checks.length },
+                  { label: 'Uppercase letter', passed: checks.uppercase },
+                  { label: 'Number', passed: checks.number },
+                  { label: 'Special character', passed: checks.special },
+                ].map((check, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center ${check.passed ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700/50 text-slate-600'}`}>
+                      {check.passed ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}
+                    </div>
+                    <span className={`text-xs ${check.passed ? 'text-emerald-400' : 'text-slate-600'}`}>{check.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Confirm Password */}
+          <div className="mb-8">
+            <label className="block text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Confirm Password</label>
+            <div className={`relative rounded-xl border transition-all duration-300 ${focused === 'confirm' ? checks.match ? 'border-emerald-500/50 bg-white/[0.04]' : 'border-red-500/50 bg-white/[0.04]' : 'border-white/[0.08] bg-white/[0.02]'}`}>
+              <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${focused === 'confirm' ? checks.match ? 'text-emerald-400' : 'text-red-400' : 'text-slate-600'}`} />
+              <input
+                type={showConfirm ? 'text' : 'password'}
+                placeholder="Re-enter your password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                onFocus={() => setFocused('confirm')}
+                onBlur={() => setFocused('')}
+                className="w-full bg-transparent text-white placeholder-slate-600 text-sm py-3.5 pl-11 pr-12 rounded-xl outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirm(!showConfirm)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            {confirmPassword.length > 0 && checks.match && (
+              <p className="text-emerald-400 text-xs mt-2 flex items-center gap-1.5">
+                <Check className="w-3 h-3" /> Passwords match
+              </p>
+            )}
+          </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="group relative w-full py-4 bg-gradient-to-r from-blue-500 via-emerald-400 to-cyan-400 animate-gradient text-white font-bold rounded-2xl hover:opacity-90 transition-all duration-300 shadow-xl shadow-emerald-500/20 hover:shadow-2xl hover:shadow-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="inline-flex items-center gap-2">
+              {loading ? 'Creating account...' : 'Create Account'}
+              {!loading && <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />}
+            </span>
+          </button>
+
+          {/* Login link */}
+          <p className="text-center text-slate-500 text-sm mt-6">
+            Already have an account?{' '}
+            <Link href="/login" className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors">
+              Sign in
+            </Link>
           </p>
         </div>
-
-        {error && (
-          <div style={{
-            background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: 10, padding: '12px 16px', marginBottom: 20,
-            color: '#EF4444', fontSize: 13
-          }}>
-            {error}
-          </div>
-        )}
-
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', color: '#94A3B8', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-            Full Name
-          </label>
-          <input
-            type="text"
-            placeholder="John Doe"
-            value={displayName}
-            onChange={e => setDisplayName(e.target.value)}
-            style={{
-              width: '100%', padding: '14px 16px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 10, color: 'white', fontSize: 15,
-              outline: 'none',
-              transition: 'border 0.2s'
-            }}
-            onFocus={e => e.target.style.borderColor = '#10B981'}
-            onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
-          />
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', color: '#94A3B8', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-            Email Address
-          </label>
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            style={{
-              width: '100%', padding: '14px 16px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 10, color: 'white', fontSize: 15,
-              outline: 'none',
-              transition: 'border 0.2s'
-            }}
-            onFocus={e => e.target.style.borderColor = '#10B981'}
-            onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
-          />
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', color: '#94A3B8', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-            Password
-          </label>
-          <input
-            type="password"
-            placeholder="Min 8 chars, uppercase, number, symbol"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            style={{
-              width: '100%', padding: '14px 16px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 10, color: 'white', fontSize: 15,
-              outline: 'none',
-              transition: 'border 0.2s'
-            }}
-            onFocus={e => e.target.style.borderColor = '#10B981'}
-            onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
-          />
-        </div>
-
-        <div style={{ marginBottom: 28 }}>
-          <label style={{ display: 'block', color: '#94A3B8', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-            Confirm Password
-          </label>
-          <input
-            type="password"
-            placeholder="Re-enter your password"
-            value={confirmPassword}
-            onChange={e => setConfirmPassword(e.target.value)}
-            style={{
-              width: '100%', padding: '14px 16px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 10, color: 'white', fontSize: 15,
-              outline: 'none',
-              transition: 'border 0.2s'
-            }}
-            onFocus={e => e.target.style.borderColor = '#10B981'}
-            onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            width: '100%', padding: '16px',
-            background: loading ? '#0F766E' : '#10B981',
-            color: 'white', border: 'none', borderRadius: 12,
-            fontSize: 16, fontWeight: 700, cursor: loading ? 'wait' : 'pointer',
-            boxShadow: '0 8px 30px rgba(16, 185, 129, 0.25)',
-            transition: 'all 0.2s'
-          }}
-          onMouseEnter={e => {
-            if (!loading) e.target.style.background = '#059669'
-          }}
-          onMouseLeave={e => {
-            if (!loading) e.target.style.background = '#10B981'
-          }}
-        >
-          {loading ? 'Creating account...' : 'Create Account'}
-        </button>
-
-        <p style={{ textAlign: 'center', marginTop: 24, color: '#64748B', fontSize: 14 }}>
-          Already have an account?{' '}
-          <Link href="/login" style={{ color: '#10B981', fontWeight: 700, textDecoration: 'none' }}>
-            Sign in
-          </Link>
-        </p>
       </form>
     </div>
   )
