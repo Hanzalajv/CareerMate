@@ -119,10 +119,35 @@ export default function DeepDivePage() {
       setSessionsRemaining(data.sessions_remaining)
       if (data.category_progress) setCategoryProgress(data.category_progress)
 
-      const firstMessageContent = data.resumed
-        ? `Welcome back! Let's continue.\n\n${data.question}`
-        : `Let's begin your Career Deep Dive.\n\n${data.question}`
-      setMessages([{ role: 'assistant', content: firstMessageContent }])
+      // If resuming, load full chat history
+      if (data.resumed) {
+        try {
+          const sessionRes = await fetch(`/api/deep-dive/session?session_id=${data.session_id}`)
+          const sessionData = await sessionRes.json()
+          
+          if (sessionData.session?.questions_answers && sessionData.session.questions_answers.length > 0) {
+            const history = []
+            sessionData.session.questions_answers.forEach(qa => {
+              if (qa.question && qa.question !== 'Question') {
+                history.push({ role: 'assistant', content: qa.question })
+              }
+              if (qa.answer) {
+                history.push({ role: 'user', content: qa.answer })
+              }
+            })
+            // Add the new resume question
+            history.push({ role: 'assistant', content: `Welcome back! Let's continue.\n\n${data.question}` })
+            setMessages(history)
+          } else {
+            setMessages([{ role: 'assistant', content: `Welcome back! Let's continue.\n\n${data.question}` }])
+          }
+        } catch (err) {
+          setMessages([{ role: 'assistant', content: `Welcome back! Let's continue.\n\n${data.question}` }])
+        }
+      } else {
+        // New session — just show first question
+        setMessages([{ role: 'assistant', content: `Let's begin your Career Deep Dive.\n\n${data.question}` }])
+      }
 
       const progressMatch = data.question?.match(/\[Progress:\s*(\d+)\/20\]/)
       if (progressMatch) setProgressCount(parseInt(progressMatch[1]))

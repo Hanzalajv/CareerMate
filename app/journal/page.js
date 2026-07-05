@@ -72,15 +72,18 @@ export default function JournalPage() {
     const entryRes = await fetch(`/api/journal/get?date=${today}`)
     const entryData = await entryRes.json()
     if (entryData.journal) {
+      const entryDate = entryData.journal.entry_date
+      const isToday = entryDate === today
+      
       setForm({
         entry_date: today,
-        what_i_did: entryData.journal.what_i_did || '',
-        learning_hours: entryData.journal.learning_hours || '',
-        challenges_faced: entryData.journal.challenges_faced || '',
-        mood: entryData.journal.mood || ''
+        what_i_did: isToday ? (entryData.journal.what_i_did || '') : '',
+        learning_hours: isToday ? (entryData.journal.learning_hours || '') : '',
+        challenges_faced: isToday ? (entryData.journal.challenges_faced || '') : '',
+        mood: isToday ? (entryData.journal.mood || '') : ''
       })
-      setFeedback(entryData.journal.ai_feedback || '')
-      setIsSaved(true)
+      setFeedback(isToday ? (entryData.journal.ai_feedback || '') : '')
+      setIsSaved(isToday)
     }
 
     const streakRes = await fetch('/api/streak/get')
@@ -92,7 +95,7 @@ export default function JournalPage() {
     if (pastRes.ok) setPastEntries(pastData.journals || [])
 
     setLoading(false)
-  }
+}
 
   async function handleSave() {
     if (!form.what_i_did.trim() || isSaved) return

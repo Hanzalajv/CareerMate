@@ -142,20 +142,18 @@ export default function Home() {
           </Link>
 
           <div className="hidden lg:flex items-center gap-8">
-            {['How It Works', 'Why CareerMate', 'Get Started'].map((item) => (
-              <a 
-                key={item}
-                href={`#${item.toLowerCase().replace(/\s+/g, '-')}`}
-                onClick={(e) => {
-                  e.preventDefault()
-                  document.getElementById(item.toLowerCase().replace(/\s+/g, '-'))?.scrollIntoView({ behavior: 'smooth' })
-                }}
-                className="text-sm text-slate-400 hover:text-white transition-colors relative group py-1"
-              >
-                {item}
-                <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-gradient-to-r from-blue-400 to-emerald-400 group-hover:w-full transition-all duration-300" />
-              </a>
-            ))}
+            <button onClick={() => document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' })} className="text-sm text-slate-400 hover:text-white transition-colors relative group py-1 bg-transparent border-none cursor-pointer">
+              How It Works
+              <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-gradient-to-r from-blue-400 to-emerald-400 group-hover:w-full transition-all duration-300" />
+            </button>
+            <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="text-sm text-slate-400 hover:text-white transition-colors relative group py-1 bg-transparent border-none cursor-pointer">
+              Why CareerMate
+              <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-gradient-to-r from-blue-400 to-emerald-400 group-hover:w-full transition-all duration-300" />
+            </button>
+            <button onClick={() => document.getElementById('cta')?.scrollIntoView({ behavior: 'smooth' })} className="text-sm text-slate-400 hover:text-white transition-colors relative group py-1 bg-transparent border-none cursor-pointer">
+              Get Started
+              <span className="absolute bottom-0 left-0 w-0 h-[2px] bg-gradient-to-r from-blue-400 to-emerald-400 group-hover:w-full transition-all duration-300" />
+            </button>
           </div>
 
           <div className="hidden lg:flex items-center gap-3">
@@ -192,20 +190,12 @@ export default function Home() {
         {mobileMenu && (
           <div className="lg:hidden bg-[#070b14]/98 backdrop-blur-xl border-b border-white/5 px-6 pb-6 scale-in">
             <div className="flex flex-col gap-3">
-              {['How It Works', 'Why CareerMate'].map((item) => (
-                <a 
-                  key={item}
-                  href={`#${item.toLowerCase().replace(/\s+/g, '-')}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    document.getElementById(item.toLowerCase().replace(/\s+/g, '-'))?.scrollIntoView({ behavior: 'smooth' })
-                    setMobileMenu(false)
-                  }}
-                  className="text-slate-400 py-2 hover:text-white transition-colors"
-                >
-                  {item}
-                </a>
-              ))}
+              <button onClick={() => { document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' }); setMobileMenu(false) }} className="text-slate-400 py-2 hover:text-white transition-colors bg-transparent border-none cursor-pointer text-left">
+                How It Works
+              </button>
+              <button onClick={() => { document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' }); setMobileMenu(false) }} className="text-slate-400 py-2 hover:text-white transition-colors bg-transparent border-none cursor-pointer text-left">
+                Why CareerMate
+              </button>
               {loggedIn ? (
                 <Link href="/dashboard" className="px-5 py-3 bg-gradient-to-r from-blue-500 via-emerald-400 to-cyan-400 text-white font-semibold rounded-xl text-center">Dashboard</Link>
               ) : (

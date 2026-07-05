@@ -4,15 +4,13 @@ import {
   updateSession,
   completeSession,
   buildSystemPrompt,
-  buildQuestionPrompt,
   buildReportPrompt,
   buildTranscript,
-  saveReport,
-  MINIMUM_QUESTIONS,
-  MAXIMUM_QUESTIONS,
-  DEEP_DIVE_CATEGORIES
+  saveReport
 } from '@/lib/deep-dive'
 import { fetchGemini } from '@/lib/ai/gemini'
+import { createEmptyContext, updateContext, buildQuestionPrompt, buildRetryPrompt } from '@/lib/context'
+import { QUESTIONS, validateAnswer, getMaxRetries } from '@/lib/questions'
 
 export async function POST(request) {
   try {
@@ -23,7 +21,7 @@ export async function POST(request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { sessionId, answer } = await request.json()
+    const { sessionId, answer, questionId } = await request.json()
 
     if (!sessionId || !answer) {
       return Response.json({ error: 'Missing sessionId or answer' }, { status: 400 })
@@ -51,185 +49,203 @@ export async function POST(request) {
       .eq('user_id', user.id)
       .single()
 
-    // Determine which category the last question belonged to
-    const lastCategory = detectCategory(session.questions_answers, answer)
+    // Load context
+    let context = session.structured_context || createEmptyContext(profile)
 
-    // Add answer to session
+    // Get current question
+    const currentQuestionNumber = (session.questions_answers?.length || 0) + 1
+    const currentQuestion = QUESTIONS[currentQuestionNumber - 1]
+    
+    if (!currentQuestion) {
+      return Response.json({ error: 'All questions completed' }, { status: 400 })
+    }
+
+    // Validate the answer
+    const validation = validateAnswer(currentQuestion.id, answer)
+    
+    // Get retry count
+    const retryCount = context.progress.retry_count?.[currentQuestion.id] || 0
+    const maxRetries = getMaxRetries()
+
+    // If answer is invalid and we haven't exceeded retries
+    if (!validation.valid && retryCount < maxRetries) {
+      // Increment retry count
+      if (!context.progress.retry_count) context.progress.retry_count = {}
+      context.progress.retry_count[currentQuestion.id] = retryCount + 1
+      
+      // Save retry count
+      await updateSession(sessionId, { structured_context: context })
+
+      // Ask AI to rephrase the question
+ const retryPrompt = buildRetryPrompt(context, currentQuestion.question, answer, currentQuestion.id)
+      const retryResponse = await fetchGemini([
+        { role: 'system', content: buildSystemPrompt(profile) },
+        { role: 'user', content: retryPrompt }
+      ], { maxTokens: 200 })
+
+      return Response.json({
+        retry: true,
+        question: retryResponse,
+        question_number: currentQuestionNumber,
+        question_id: currentQuestion.id,
+        hint: validation.reason
+      })
+    }
+
+    // Answer is valid (or max retries reached) — accept it
+    // Update context with the answer
+    context = updateContext(context, currentQuestion.id, answer)
+    
+    // Reset retry count for this question
+    if (context.progress.retry_count) {
+      delete context.progress.retry_count[currentQuestion.id]
+    }
+
+    // Add to Q&A history
     const updatedQA = [
       ...(session.questions_answers || []),
       {
-        question: session.last_question || 'Question',
+        question: session.last_question || currentQuestion.question,
         answer: answer,
-        category: lastCategory,
+        question_id: currentQuestion.id,
+        category: currentQuestion.category,
         timestamp: new Date().toISOString()
       }
     ]
 
-    const questionNumber = updatedQA.length + 1
-    // Check if session should end
-    const shouldEnd = checkIfShouldEnd(updatedQA)
+    const nextQuestionNumber = currentQuestionNumber + 1
 
-    // Also check the latest AI question for [Progress: 20/20]
-    const lastAIQuestion = session.last_question || ''
-    const aiSaysComplete = lastAIQuestion.includes('[Progress: 20/20]') ||
-                           lastAIQuestion.includes('[Progress:20/20]')
-
-    if (shouldEnd || aiSaysComplete) {
-      // Complete the session
+    // Check if session is complete
+    if (currentQuestionNumber >= 20) {
+      // Generate report
       const transcript = buildTranscript(updatedQA)
       await completeSession(sessionId, transcript)
 
-      // Generate report
       const reportPrompt = buildReportPrompt(profile, updatedQA)
       
       const reportResponse = await fetchGemini([
         { role: 'system', content: 'You are a career report generator. Return ONLY valid JSON.' },
         { role: 'user', content: reportPrompt }
       ], { maxTokens: 4000 })
-      // Parse and save report
+
+      // Parse report
       let reportContent = null
-
-      // First attempt
       try {
-        let cleanedResponse = reportResponse
-        
-        // Remove markdown code blocks
-        cleanedResponse = cleanedResponse.replace(/```json\s*/g, '')
-        cleanedResponse = cleanedResponse.replace(/```\s*/g, '')
-        
-        // Find JSON object boundaries
-        const jsonStart = cleanedResponse.indexOf('{')
-        const jsonEnd = cleanedResponse.lastIndexOf('}') + 1
-        
+        let cleaned = reportResponse
+          .replace(/```json\s*/g, '').replace(/```\s*/g, '')
+        const jsonStart = cleaned.indexOf('{')
+        const jsonEnd = cleaned.lastIndexOf('}') + 1
         if (jsonStart >= 0 && jsonEnd > jsonStart) {
-          cleanedResponse = cleanedResponse.slice(jsonStart, jsonEnd)
+          cleaned = cleaned.slice(jsonStart, jsonEnd)
         }
-        
-        // Try to fix common JSON issues
-        cleanedResponse = cleanedResponse
-          .replace(/,\s*}/g, '}')
-          .replace(/,\s*]/g, ']')
-          .replace(/\n/g, ' ')
-          .replace(/\t/g, ' ')
-          .trim()
-        
-        reportContent = JSON.parse(cleanedResponse)
-        
+        cleaned = cleaned.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/\n/g, ' ').replace(/\t/g, ' ').trim()
+        reportContent = JSON.parse(cleaned)
       } catch (parseError) {
-        console.error('Report parsing error (first attempt):', parseError)
-        console.error('Raw response (first 500 chars):', reportResponse.slice(0, 500))
-        
-        // Second attempt with stricter prompt
+        // Retry once
         try {
-          console.log('Retrying report generation...')
-          
-          const retryPrompt = `Your previous response had formatting errors. Generate a VALID JSON report now. Return ONLY the JSON object. Start with { and end with }. No markdown, no explanations, no text outside the JSON.
-
-${reportPrompt}`
-          
+          const retryPrompt = `Generate a VALID JSON report. Return ONLY the JSON object.\n\n${reportPrompt}`
           const retryResponse = await fetchGemini([
-            { role: 'system', content: 'You are a JSON generator. Return ONLY valid JSON. No markdown. No explanations. Start with { and end with }.' },
+            { role: 'system', content: 'Return ONLY valid JSON. No markdown.' },
             { role: 'user', content: retryPrompt }
           ])
-          
-          let cleanedRetry = retryResponse
-            .replace(/```json\s*/g, '')
-            .replace(/```\s*/g, '')
-          
-          const jsonStart = cleanedRetry.indexOf('{')
-          const jsonEnd = cleanedRetry.lastIndexOf('}') + 1
-          
-          if (jsonStart >= 0 && jsonEnd > jsonStart) {
-            cleanedRetry = cleanedRetry.slice(jsonStart, jsonEnd)
-          }
-          
-          cleanedRetry = cleanedRetry
-            .replace(/,\s*}/g, '}')
-            .replace(/,\s*]/g, ']')
-            .replace(/\n/g, ' ')
-            .replace(/\t/g, ' ')
-            .trim()
-          
+          let cleanedRetry = retryResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '')
+          const rs = cleanedRetry.indexOf('{'), re = cleanedRetry.lastIndexOf('}') + 1
+          if (rs >= 0 && re > rs) cleanedRetry = cleanedRetry.slice(rs, re)
+          cleanedRetry = cleanedRetry.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/\n/g, ' ').trim()
           reportContent = JSON.parse(cleanedRetry)
-          console.log('Retry succeeded!')
-          
         } catch (retryError) {
-          console.error('Report parsing error (retry also failed):', retryError)
-          console.error('Retry response (first 500 chars):', retryResponse?.slice(0, 500))
-          return Response.json(
-            { error: 'Failed to generate report after multiple attempts. Please start a new session.' },
-            { status: 500 }
-          )
+          return Response.json({ error: 'Failed to generate report' }, { status: 500 })
         }
       }
 
-      // If we have report content, save it
       if (reportContent) {
         await saveReport(user.id, sessionId, reportContent)
 
-        // Create checklist from report
-if (reportContent.checklist && reportContent.checklist.length > 0) {
-  const checklistItems = reportContent.checklist.map(item => ({
-    task: item.task,
-    category: item.category || 'General',
-    priority: item.priority || 'MEDIUM',
-    deadline: item.deadline || 'This month',
-    completed: false,
-    completed_at: null
-  }))
+               // Create checklist from 6-month roadmap
+        let allChecklistItems = []
 
-  await supabase
-    .from('user_checklists')
-    .insert({
-      user_id: user.id,
-      report_id: sessionId,
-      month_number: 1,
-      status: 'NOT_STARTED',
-      items: checklistItems
-    })
-}
+        if (reportContent.six_month_roadmap) {
+          Object.entries(reportContent.six_month_roadmap).forEach(([key, month]) => {
+            if (month.checklist && month.checklist.length > 0) {
+              month.checklist.forEach(item => {
+                allChecklistItems.push({
+                  task: item.task,
+                  category: item.category || 'General',
+                  priority: item.priority || 'MEDIUM',
+                  deadline: item.deadline || 'This month',
+                  month: parseInt(key.replace('month_', '')) || 1,
+                  completed: false,
+                  completed_at: null
+                })
+              })
+            }
+          })
+        }
 
-        // Update session with last Q&A
+        // Fallback to flat checklist if no roadmap
+        if (allChecklistItems.length === 0 && reportContent.checklist && reportContent.checklist.length > 0) {
+          allChecklistItems = reportContent.checklist.map(item => ({
+            task: item.task,
+            category: item.category || 'General',
+            priority: item.priority || 'MEDIUM',
+            deadline: item.deadline || 'This month',
+            month: item.month || 1,
+            completed: false,
+            completed_at: null
+          }))
+        }
+
+        if (allChecklistItems.length > 0) {
+          await supabase.from('user_checklists').insert({
+            user_id: user.id,
+            report_id: sessionId,
+            month_number: 1,
+            status: 'NOT_STARTED',
+            items: allChecklistItems
+          })
+        }
+
         await updateSession(sessionId, {
           questions_answers: updatedQA,
           question_count: updatedQA.length,
-          last_question: null
+          last_question: null,
+          structured_context: context
         })
 
         return Response.json({
           complete: true,
           session_id: sessionId,
           total_questions: updatedQA.length,
-          message: 'Your Career Deep Dive report is ready!',
-          report_id: reportContent.report_id
+          message: 'Your Career Deep Dive report is ready!'
         })
       }
     }
 
-    // Generate next question
-    const questionPrompt = buildQuestionPrompt(updatedQA, questionNumber)
+    // Not complete — get next question
+  
+const nextQuestion = QUESTIONS[currentQuestionNumber]
+const prompt = buildQuestionPrompt(context, nextQuestion.question, nextQuestionNumber, nextQuestion.id)
     
-   const nextQuestion = await fetchGemini([
-  { role: 'user', content: questionPrompt }
-], { maxTokens: 500 })
+    const aiResponse = await fetchGemini([
+      { role: 'system', content: buildSystemPrompt(profile) },
+      { role: 'user', content: prompt }
+    ], { maxTokens: 300 })
 
-    // Save updated session
+    // Save
     await updateSession(sessionId, {
       questions_answers: updatedQA,
       question_count: updatedQA.length,
-      last_question: nextQuestion
+      last_question: aiResponse,
+      structured_context: context
     })
-
-    // Calculate category progress
-    const categoryProgress = getCategoryProgress(updatedQA)
 
     return Response.json({
       complete: false,
       session_id: sessionId,
-      question_number: questionNumber,
-      question: nextQuestion,
-      category_progress: categoryProgress,
-      questions_remaining: MINIMUM_QUESTIONS - updatedQA.length
+      question_number: nextQuestionNumber,
+      question: aiResponse,
+      question_id: nextQuestion.id,
+      questions_remaining: 20 - currentQuestionNumber
     })
 
   } catch (error) {
@@ -239,82 +255,4 @@ if (reportContent.checklist && reportContent.checklist.length > 0) {
       { status: 500 }
     )
   }
-}
-
-function detectCategory(previousQA, answer) {
-  // Simple keyword-based category detection
-  const answerText = answer.toLowerCase()
-  
-  const categoryKeywords = {
-    'Financial Reality': ['money', 'earn', 'income', 'salary', 'pkr', 'lakh', 'crore', 'financial', 'pay', 'budget'],
-    'Current Skills & Earning Potential': ['skill', 'laptop', 'internet', 'english', 'computer', 'learn', 'course', 'certificate'],
-    'Family & Social Context': ['family', 'parents', 'mother', 'father', 'pressure', 'expect', 'support', 'allow'],
-    'Work Style & Environment': ['office', 'home', 'remote', 'business', 'freelance', 'move', 'relocate', 'city'],
-    'Market Awareness': ['market', 'demand', 'scope', 'future', 'trend', 'opportunity', 'know about'],
-    'Learning Capacity & Commitment': ['hour', 'time', 'study', 'focus', 'dedicate', 'commit', 'finish', 'quit'],
-    'Long-Term Direction': ['year', 'future', 'goal', 'dream', 'abroad', 'foreign', 'visa', 'settle', 'backup']
-  }
-
-  for (const [category, keywords] of Object.entries(categoryKeywords)) {
-    if (keywords.some(keyword => answerText.includes(keyword))) {
-      return category
-    }
-  }
-
-  // Fallback: use last category or general
-  if (previousQA && previousQA.length > 0) {
-    const lastCat = previousQA[previousQA.length - 1].category
-    if (lastCat) return lastCat
-  }
-
-  return 'General'
-}
-function checkIfShouldEnd(questionsAnswers) {
-  const count = questionsAnswers.length
-
-  // Check if AI has already said 20/20
-  let maxProgress = 0
-  questionsAnswers.forEach(qa => {
-    const match = qa.question?.match(/\[Progress:\s*(\d+)\/20\]/)
-    if (match) {
-      const progress = parseInt(match[1])
-      if (progress > maxProgress) maxProgress = progress
-    }
-  })
-  
-  // End if AI said 20/20
-  if (maxProgress >= 20) return true
-
-  // Must have at least minimum questions
-  if (count < MINIMUM_QUESTIONS) return false
-
-  // Check if all categories are covered
-  const categoryCount = {}
-  questionsAnswers.forEach(qa => {
-    if (qa.category) {
-      categoryCount[qa.category] = (categoryCount[qa.category] || 0) + 1
-    }
-  })
-
-  const allCategoriesCovered = DEEP_DIVE_CATEGORIES.every(c => 
-    (categoryCount[c.category] || 0) >= c.required
-  )
-
-  // End if all categories covered OR max questions reached
-  return allCategoriesCovered || count >= MAXIMUM_QUESTIONS
-}
-function getCategoryProgress(questionsAnswers) {
-  const categoryCount = {}
-  questionsAnswers.forEach(qa => {
-    if (qa.category) {
-      categoryCount[qa.category] = (categoryCount[qa.category] || 0) + 1
-    }
-  })
-
-  return DEEP_DIVE_CATEGORIES.map(c => ({
-    category: c.category,
-    required: c.required,
-    asked: categoryCount[c.category] || 0,
-    complete: (categoryCount[c.category] || 0) >= c.required
-  }))
 }

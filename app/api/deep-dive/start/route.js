@@ -1,15 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
 import { 
   getActiveSession, 
-  createSession, 
   getWeeklySessionCount,
-  buildSystemPrompt,
-  buildQuestionPrompt,
-  DEEP_DIVE_CATEGORIES,
-  MINIMUM_QUESTIONS,
-  MAXIMUM_QUESTIONS
+  createSession,
+  buildSystemPrompt
 } from '@/lib/deep-dive'
 import { fetchGemini } from '@/lib/ai/gemini'
+import { createEmptyContext, buildQuestionPrompt } from '@/lib/context'
+import { QUESTIONS } from '@/lib/questions'
 
 export async function POST(request) {
   try {
@@ -36,10 +34,17 @@ export async function POST(request) {
     
     if (activeSession) {
       const qa = activeSession.questions_answers || []
-      const questionNumber = qa.length + 1
+      const context = activeSession.structured_context || createEmptyContext(profile)
       
-      // Generate next question based on previous answers
-      const prompt = buildQuestionPrompt(qa, questionNumber)
+      // Find current question number
+      const currentQuestionNumber = qa.length + 1
+      
+      if (currentQuestionNumber > 20) {
+        return Response.json({ error: 'Session complete — all 20 questions answered' }, { status: 400 })
+      }
+      
+      const question = QUESTIONS[currentQuestionNumber - 1]
+      const prompt = buildQuestionPrompt(context, question.question, currentQuestionNumber)
       
       const response = await fetchGemini([
         { role: 'system', content: buildSystemPrompt(profile) },
@@ -49,10 +54,10 @@ export async function POST(request) {
       return Response.json({
         resumed: true,
         session_id: activeSession.session_id,
-        question_number: questionNumber,
+        question_number: currentQuestionNumber,
         total_answered: qa.length,
         question: response,
-        category_progress: getCategoryProgress(qa)
+        question_id: question.id
       })
     }
 
@@ -67,18 +72,20 @@ export async function POST(request) {
     }
 
     // Create new session
+    const context = createEmptyContext(profile)
+    
     let session
     try {
-      session = await createSession(user.id)
+      session = await createSession(user.id, weekCount, context)
     } catch (createError) {
-      // If duplicate (race condition), fetch the active session instead
       if (createError.message?.includes('duplicate') || createError.code === '23505') {
         const existingSession = await getActiveSession(user.id)
         if (existingSession) {
           const qa = existingSession.questions_answers || []
-          const questionNumber = qa.length + 1
+          const currentQuestionNumber = qa.length + 1
+          const question = QUESTIONS[currentQuestionNumber - 1]
+          const prompt = buildQuestionPrompt(context, question.question, currentQuestionNumber)
           
-          const prompt = buildQuestionPrompt(qa, questionNumber)
           const response = await fetchGemini([
             { role: 'system', content: buildSystemPrompt(profile) },
             { role: 'user', content: prompt }
@@ -87,22 +94,23 @@ export async function POST(request) {
           return Response.json({
             resumed: true,
             session_id: existingSession.session_id,
-            question_number: questionNumber,
+            question_number: currentQuestionNumber,
             total_answered: qa.length,
             question: response,
-            category_progress: getCategoryProgress(qa)
+            question_id: question.id
           })
         }
       }
       throw createError
     }
 
-    // Generate first question
-    const firstPrompt = `Start the Career Deep Dive assessment. Ask the first question to understand their financial reality and current situation. Keep it practical and specific to Pakistan. Do NOT ask about their passions or dreams — start with their real-world constraints and needs.`
-
-    const firstQuestion = await fetchGemini([
+    // First question
+    const firstQuestion = QUESTIONS[0]
+    const prompt = buildQuestionPrompt(context, firstQuestion.question, 1)
+    
+    const response = await fetchGemini([
       { role: 'system', content: buildSystemPrompt(profile) },
-      { role: 'user', content: firstPrompt }
+      { role: 'user', content: prompt }
     ])
 
     return Response.json({
@@ -110,7 +118,8 @@ export async function POST(request) {
       session_id: session.session_id,
       question_number: 1,
       total_answered: 0,
-      question: firstQuestion,
+      question: response,
+      question_id: firstQuestion.id,
       sessions_remaining: 2 - (weekCount + 1)
     })
 
@@ -121,20 +130,4 @@ export async function POST(request) {
       { status: 500 }
     )
   }
-}
-
-function getCategoryProgress(questionsAnswers) {
-  const categoryCount = {}
-  questionsAnswers.forEach(qa => {
-    if (qa.category) {
-      categoryCount[qa.category] = (categoryCount[qa.category] || 0) + 1
-    }
-  })
-  
-  return DEEP_DIVE_CATEGORIES.map(c => ({
-    category: c.category,
-    required: c.required,
-    asked: categoryCount[c.category] || 0,
-    complete: (categoryCount[c.category] || 0) >= c.required
-  }))
 }
