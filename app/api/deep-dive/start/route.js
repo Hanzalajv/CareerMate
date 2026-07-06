@@ -8,6 +8,7 @@ import {
 import { fetchGemini } from '@/lib/ai/gemini'
 import { createEmptyContext, buildQuestionPrompt } from '@/lib/context'
 import { QUESTIONS } from '@/lib/questions'
+import { deepDiveLimiter } from '@/lib/rate-limit'
 
 export async function POST(request) {
   try {
@@ -17,6 +18,14 @@ export async function POST(request) {
     if (authError || !user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    // Rate limit check
+const rateCheck = deepDiveLimiter.check(user.id)
+if (!rateCheck.allowed) {
+  return Response.json(
+    { error: 'Too many requests. Please slow down.', retryIn: rateCheck.resetIn },
+    { status: 429 }
+  )
+}
 
     // Get user profile
     const { data: profile } = await supabase

@@ -304,13 +304,13 @@ export default function ReportPage() {
                     {/* Evidence Quotes */}
                     {career.why_suggested.evidence_quotes && career.why_suggested.evidence_quotes.length > 0 && (
                       <div className="mt-3 space-y-1.5">
-                        {career.why_suggested.evidence_quotes.map((quote, j) => (
-                          <div key={j} className="flex items-start gap-2 text-xs text-slate-500 italic">
-                            <span className="text-purple-400 mt-0.5">"</span>
-                            <span>{quote}</span>
-                            <span className="text-purple-400 mt-0.5">"</span>
-                          </div>
-                        ))}
+                       {career.why_suggested.evidence_quotes.map((quote, j) => (
+  <div key={j} className="flex items-start gap-2 text-xs text-slate-500 italic">
+    <span className="text-purple-400 mt-0.5">"</span>
+    <span>{typeof quote === 'string' ? quote : quote.text || JSON.stringify(quote)}</span>
+    <span className="text-purple-400 mt-0.5">"</span>
+  </div>
+))}
                       </div>
                     )}
                   </div>

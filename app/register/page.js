@@ -17,6 +17,7 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [focused, setFocused] = useState('')
   const router = useRouter()
+  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false)
 
   // Password validation checks
   const checks = {
@@ -39,7 +40,10 @@ export default function RegisterPage() {
   async function handleRegister(e) {
     e.preventDefault()
     setError('')
-
+    if (!agreedToPrivacy) {
+  setError('Please agree to the Privacy Policy to continue.')
+  return
+}
     if (!displayName.trim()) { setError('Please enter your full name.'); return }
     if (!email.trim()) { setError('Please enter your email address.'); return }
     if (!checks.length) { setError('Password must be at least 8 characters.'); return }
@@ -73,6 +77,7 @@ export default function RegisterPage() {
         backgroundSize: '50px 50px'
       }} />
 
+      
       <form onSubmit={handleRegister} className="relative z-10 w-full max-w-md">
         {/* Card */}
         <div className="bg-white/[0.02] backdrop-blur-2xl border border-white/[0.06] rounded-3xl p-8 lg:p-10 shadow-2xl shadow-black/50">
@@ -199,6 +204,26 @@ export default function RegisterPage() {
               </p>
             )}
           </div>
+          {/* Privacy Agreement */}
+<div className="mb-6 w-full">
+  <label className="flex items-start gap-3 cursor-pointer w-full">
+    <div className="flex-shrink-0 mt-0.5">
+      <input
+        type="checkbox"
+        checked={agreedToPrivacy}
+        onChange={(e) => setAgreedToPrivacy(e.target.checked)}
+        className="w-4 h-4 rounded border-white/[0.15] bg-white/[0.03] text-emerald-500 focus:ring-emerald-500"
+      />
+    </div>
+    <span className="text-slate-400 text-xs leading-relaxed">
+      I agree to the{' '}
+      <Link href="/privacy" className="text-emerald-400 hover:text-emerald-300 underline">
+        Privacy Policy
+      </Link>
+      {' '}and consent to my data being processed by AI services for career guidance.
+    </span>
+  </label>
+</div>
 
           {/* Submit */}
           <button

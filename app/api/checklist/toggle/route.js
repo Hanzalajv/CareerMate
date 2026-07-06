@@ -1,5 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 
+import { checklistLimiter } from '@/lib/rate-limit'
+
+
 export async function POST(request) {
   try {
     const supabase = await createClient()
@@ -8,6 +11,13 @@ export async function POST(request) {
     if (authError || !user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    
+// After auth check:
+const rateCheck = checklistLimiter.check(user.id)
+if (!rateCheck.allowed) {
+  return Response.json({ error: 'Slow down.' }, { status: 429 })
+}
 
     const { checklistId, itemIndex } = await request.json()
 

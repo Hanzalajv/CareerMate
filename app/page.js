@@ -460,9 +460,9 @@ export default function Home() {
             <span>© 2026 CareerMate. Built in Pakistan.</span>
           </div>
           <div className="flex items-center gap-6 text-sm text-slate-500">
-            <a href="#" className="hover:text-white transition-colors">Privacy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms</a>
-            <a href="#" className="hover:text-white transition-colors">Contact</a>
+            <a href="/privacy" className="hover:text-white transition-colors">Privacy</a>
+            <a href="/terms" className="hover:text-white transition-colors">Terms</a>
+             <Link href="/contact" className="hover:text-white transition-colors">Contact</Link>
           </div>
         </div>
       </footer>

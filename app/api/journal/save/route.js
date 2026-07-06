@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { journalLimiter } from '@/lib/rate-limit'
+import { sanitizeInput } from '@/lib/sanitize'
 
 export async function POST(request) {
   try {
@@ -9,7 +11,16 @@ export async function POST(request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Rate limit check
+    const rateCheck = journalLimiter.check(user.id)
+    if (!rateCheck.allowed) {
+      return Response.json({ error: 'Journal already saved today.' }, { status: 429 })
+    }
+
     const { entry_date, what_i_did, learning_hours, challenges_faced, mood } = await request.json()
+    const cleanWhatIDid = sanitizeInput(what_i_did)
+    const cleanChallenges = sanitizeInput(challenges_faced)
+    const cleanMood = sanitizeInput(mood)
     const today = new Date().toISOString().split('T')[0]
 
     // Save journal entry
@@ -18,10 +29,10 @@ export async function POST(request) {
       .upsert({
         user_id: user.id,
         entry_date: entry_date || today,
-        what_i_did,
+        what_i_did: cleanWhatIDid,
         learning_hours: learning_hours || 0,
-        challenges_faced,
-        mood
+        challenges_faced: cleanChallenges,
+        mood: cleanMood
       }, {
         onConflict: 'user_id,entry_date'
       })
@@ -59,7 +70,7 @@ async function updateDailyStreak(supabase, userId) {
     return
   }
 
-  if (streak.daily_last_date === today) return // Already logged
+  if (streak.daily_last_date === today) return
 
   if (streak.daily_last_date === yesterday) {
     const newStreak = streak.daily_streak + 1

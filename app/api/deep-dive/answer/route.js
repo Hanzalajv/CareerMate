@@ -9,8 +9,10 @@ import {
   saveReport
 } from '@/lib/deep-dive'
 import { fetchGemini } from '@/lib/ai/gemini'
-import { createEmptyContext, updateContext, buildQuestionPrompt, buildRetryPrompt } from '@/lib/context'
-import { QUESTIONS, validateAnswer, getMaxRetries } from '@/lib/questions'
+import { createEmptyContext, updateContext, buildQuestionPrompt } from '@/lib/context'
+import { QUESTIONS, getMaxRetries } from '@/lib/questions'
+import { deepDiveLimiter } from '@/lib/rate-limit'
+import { sanitizeInput } from '@/lib/sanitize'
 
 export async function POST(request) {
   try {
@@ -21,10 +23,20 @@ export async function POST(request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { sessionId, answer, questionId } = await request.json()
+    // Rate limit check
+    const rateCheck = deepDiveLimiter.check(user.id)
+    if (!rateCheck.allowed) {
+      return Response.json(
+        { error: 'Too many requests. Please slow down.', retryIn: rateCheck.resetIn },
+        { status: 429 }
+      )
+    }
 
-    if (!sessionId || !answer) {
-      return Response.json({ error: 'Missing sessionId or answer' }, { status: 400 })
+    const { sessionId, answer, questionId } = await request.json()
+    const cleanAnswer = sanitizeInput(answer)
+
+    if (!sessionId || !cleanAnswer || cleanAnswer.length < 2) {
+      return Response.json({ error: 'Please provide a valid answer' }, { status: 400 })
     }
 
     // Get session
@@ -60,43 +72,53 @@ export async function POST(request) {
       return Response.json({ error: 'All questions completed' }, { status: 400 })
     }
 
-    // Validate the answer
-    const validation = validateAnswer(currentQuestion.id, answer)
-    
     // Get retry count
     const retryCount = context.progress.retry_count?.[currentQuestion.id] || 0
     const maxRetries = getMaxRetries()
 
-    // If answer is invalid and we haven't exceeded retries
-    if (!validation.valid && retryCount < maxRetries) {
-      // Increment retry count
+    // Ask AI: is this answer good enough?
+       const validatePrompt = `You asked: "${session.last_question || currentQuestion.question}"
+
+The user answered: "${cleanAnswer}"
+
+We need: ${currentQuestion.contextField || 'their honest answer'}
+
+RULES:
+- If answer is clear and answers the question → respond with ONLY the word: NEXT
+- If answer is gibberish/nonsense (like "blah blah", "asdf", "x y") → say: "I need a real answer. ${currentQuestion.question}"
+- If answer is off-topic → gently redirect: acknowledge briefly, then ask the question again differently
+- If answer is too short/vague → ask for more detail with a specific example of what you need
+
+Keep it 1 sentence. Be direct.
+
+Your response:`
+
+    const aiJudgment = await fetchGemini([
+      { role: 'system', content: buildSystemPrompt(profile) },
+      { role: 'user', content: validatePrompt }
+    ], { maxTokens: 150 })
+
+    const isGoodAnswer = aiJudgment.trim().toUpperCase() === 'NEXT'
+
+    // If answer isn't good enough and we haven't exceeded retries
+    if (!isGoodAnswer && retryCount < maxRetries) {
       if (!context.progress.retry_count) context.progress.retry_count = {}
       context.progress.retry_count[currentQuestion.id] = retryCount + 1
       
-      // Save retry count
       await updateSession(sessionId, { structured_context: context })
-
-      // Ask AI to rephrase the question
- const retryPrompt = buildRetryPrompt(context, currentQuestion.question, answer, currentQuestion.id)
-      const retryResponse = await fetchGemini([
-        { role: 'system', content: buildSystemPrompt(profile) },
-        { role: 'user', content: retryPrompt }
-      ], { maxTokens: 200 })
 
       return Response.json({
         retry: true,
-        question: retryResponse,
+        question: aiJudgment,
         question_number: currentQuestionNumber,
         question_id: currentQuestion.id,
-        hint: validation.reason
+        hint: 'Please provide more detail.'
       })
     }
 
-    // Answer is valid (or max retries reached) — accept it
-    // Update context with the answer
-    context = updateContext(context, currentQuestion.id, answer)
+    // Answer accepted — update context
+    context = updateContext(context, currentQuestion.id, cleanAnswer)
     
-    // Reset retry count for this question
     if (context.progress.retry_count) {
       delete context.progress.retry_count[currentQuestion.id]
     }
@@ -106,7 +128,7 @@ export async function POST(request) {
       ...(session.questions_answers || []),
       {
         question: session.last_question || currentQuestion.question,
-        answer: answer,
+        answer: cleanAnswer,
         question_id: currentQuestion.id,
         category: currentQuestion.category,
         timestamp: new Date().toISOString()
@@ -117,7 +139,6 @@ export async function POST(request) {
 
     // Check if session is complete
     if (currentQuestionNumber >= 20) {
-      // Generate report
       const transcript = buildTranscript(updatedQA)
       await completeSession(sessionId, transcript)
 
@@ -128,7 +149,6 @@ export async function POST(request) {
         { role: 'user', content: reportPrompt }
       ], { maxTokens: 4000 })
 
-      // Parse report
       let reportContent = null
       try {
         let cleaned = reportResponse
@@ -141,7 +161,6 @@ export async function POST(request) {
         cleaned = cleaned.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']').replace(/\n/g, ' ').replace(/\t/g, ' ').trim()
         reportContent = JSON.parse(cleaned)
       } catch (parseError) {
-        // Retry once
         try {
           const retryPrompt = `Generate a VALID JSON report. Return ONLY the JSON object.\n\n${reportPrompt}`
           const retryResponse = await fetchGemini([
@@ -161,9 +180,7 @@ export async function POST(request) {
       if (reportContent) {
         await saveReport(user.id, sessionId, reportContent)
 
-               // Create checklist from 6-month roadmap
         let allChecklistItems = []
-
         if (reportContent.six_month_roadmap) {
           Object.entries(reportContent.six_month_roadmap).forEach(([key, month]) => {
             if (month.checklist && month.checklist.length > 0) {
@@ -181,8 +198,6 @@ export async function POST(request) {
             }
           })
         }
-
-        // Fallback to flat checklist if no roadmap
         if (allChecklistItems.length === 0 && reportContent.checklist && reportContent.checklist.length > 0) {
           allChecklistItems = reportContent.checklist.map(item => ({
             task: item.task,
@@ -194,7 +209,6 @@ export async function POST(request) {
             completed_at: null
           }))
         }
-
         if (allChecklistItems.length > 0) {
           await supabase.from('user_checklists').insert({
             user_id: user.id,
@@ -221,17 +235,15 @@ export async function POST(request) {
       }
     }
 
-    // Not complete — get next question
-  
-const nextQuestion = QUESTIONS[currentQuestionNumber]
-const prompt = buildQuestionPrompt(context, nextQuestion.question, nextQuestionNumber, nextQuestion.id)
+    // Get next question
+    const nextQuestion = QUESTIONS[currentQuestionNumber]
+    const prompt = buildQuestionPrompt(context, nextQuestion.question, nextQuestionNumber, nextQuestion.id)
     
     const aiResponse = await fetchGemini([
       { role: 'system', content: buildSystemPrompt(profile) },
       { role: 'user', content: prompt }
     ], { maxTokens: 300 })
 
-    // Save
     await updateSession(sessionId, {
       questions_answers: updatedQA,
       question_count: updatedQA.length,

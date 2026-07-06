@@ -41,7 +41,7 @@ export default function DeepDivePage() {
   const [sessionsRemaining, setSessionsRemaining] = useState(null)
   const [error, setError] = useState(null)
   const [complete, setComplete] = useState(false)
-  const [progressCount, setProgressCount] = useState(0)
+  
   const [showStats, setShowStats] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
@@ -102,7 +102,7 @@ export default function DeepDivePage() {
     await startOrResumeSession(user)
   }
 
-  async function startOrResumeSession(user) {
+async function startOrResumeSession(user) {
     try {
       setLoading(true); setError(null)
       const response = await fetch('/api/deep-dive/start', {
@@ -117,7 +117,6 @@ export default function DeepDivePage() {
       setQuestionNumber(data.question_number)
       setResumed(data.resumed)
       setSessionsRemaining(data.sessions_remaining)
-      if (data.category_progress) setCategoryProgress(data.category_progress)
 
       // If resuming, load full chat history
       if (data.resumed) {
@@ -135,31 +134,27 @@ export default function DeepDivePage() {
                 history.push({ role: 'user', content: qa.answer })
               }
             })
-            // Add the new resume question
-            history.push({ role: 'assistant', content: `Welcome back! Let's continue.\n\n${data.question}` })
+            // Add the new question
+            history.push({ role: 'assistant', content: data.question })
             setMessages(history)
           } else {
-            setMessages([{ role: 'assistant', content: `Welcome back! Let's continue.\n\n${data.question}` }])
+            setMessages([{ role: 'assistant', content: data.question }])
           }
         } catch (err) {
-          setMessages([{ role: 'assistant', content: `Welcome back! Let's continue.\n\n${data.question}` }])
+          setMessages([{ role: 'assistant', content: data.question }])
         }
       } else {
         // New session — just show first question
-        setMessages([{ role: 'assistant', content: `Let's begin your Career Deep Dive.\n\n${data.question}` }])
+        setMessages([{ role: 'assistant', content: data.question }])
       }
 
-      const progressMatch = data.question?.match(/\[Progress:\s*(\d+)\/20\]/)
-      if (progressMatch) setProgressCount(parseInt(progressMatch[1]))
       setLoading(false)
     } catch (err) {
       setError('Failed to connect.'); setLoading(false)
     }
   }
 
-  function calculateProgressPercent(count) {
-    return Math.min(Math.round((count / 20) * 100), 100)
-  }
+  
 
   async function handleSend() {
     const trimmed = input.trim()
@@ -258,8 +253,8 @@ export default function DeepDivePage() {
                 <h1 className={`${textClass} font-semibold text-sm`}>Career Deep Dive</h1>
               </div>
               <p className={`${subtextClass} text-xs ml-9`}>
-                {complete ? 'Session Complete' : `${progressCount}/20 meaningful`}
-              </p>
+  {complete ? 'Session Complete' : `Question ${questionNumber - 1}/20 answered`}
+</p>
             </div>
           </div>
 
@@ -287,11 +282,13 @@ export default function DeepDivePage() {
         <div className="max-w-3xl mx-auto mt-3 flex items-center gap-3">
           <div className="flex-1 bg-white/[0.04] rounded-full h-1.5 overflow-hidden">
             <div className="h-full rounded-full transition-all duration-700 ease-out" style={{
-              width: `${calculateProgressPercent(progressCount)}%`,
-              background: progressCount < 6 ? 'linear-gradient(90deg, #ef4444, #f59e0b)' : progressCount < 12 ? 'linear-gradient(90deg, #f59e0b, #10b981)' : 'linear-gradient(90deg, #10b981, #06b6d4)'
-            }} />
+  width: `${Math.round(((questionNumber - 1) / 20) * 100)}%`,
+  background: (questionNumber - 1) < 6 ? 'linear-gradient(90deg, #ef4444, #f59e0b)' : 
+              (questionNumber - 1) < 12 ? 'linear-gradient(90deg, #f59e0b, #10b981)' : 
+              'linear-gradient(90deg, #10b981, #06b6d4)'
+}} />
           </div>
-          <span className="text-[10px] text-slate-500 font-medium min-w-[32px] text-right">{calculateProgressPercent(progressCount)}%</span>
+          <span className="text-[10px] text-slate-500 font-medium min-w-[32px] text-right">{Math.round(((questionNumber - 1) / 20) * 100)}%</span>
         </div>
 
         {/* Settings Panel */}
@@ -404,20 +401,16 @@ export default function DeepDivePage() {
             </div>
           ))}
 
-          {sending && (
-            <div className="flex gap-3">
-              <div className={`w-8 h-8 rounded-xl ${currentAiColor.avatarBg} ${currentAiColor.avatarBorder} flex items-center justify-center flex-shrink-0`}>
-                <Compass className={`w-4 h-4 ${currentAiColor.avatarIcon}`} />
-              </div>
-              <div className={`${currentAiColor.bg} ${currentAiColor.border} rounded-2xl rounded-bl-md px-4 py-3`}>
-                <div className="flex gap-1.5">
-                  <span className={`w-2 h-2 rounded-full animate-bounce ${currentAiColor.dot}`} style={{ animationDelay: '0ms' }} />
-                  <span className={`w-2 h-2 rounded-full animate-bounce ${currentAiColor.dot}`} style={{ animationDelay: '150ms' }} />
-                  <span className={`w-2 h-2 rounded-full animate-bounce ${currentAiColor.dot}`} style={{ animationDelay: '300ms' }} />
-                </div>
-              </div>
-            </div>
-          )}
+         {sending && (
+  <div className="flex gap-3">
+    <div className={`w-8 h-8 rounded-xl ${currentAiColor.avatarBg} ${currentAiColor.avatarBorder} flex items-center justify-center flex-shrink-0`}>
+      <Compass className={`w-4 h-4 ${currentAiColor.avatarIcon}`} />
+    </div>
+    <div className={`${currentAiColor.bg} ${currentAiColor.border} rounded-2xl rounded-bl-md px-4 py-3`}>
+      <ThinkingIndicator questionNumber={questionNumber} />
+    </div>
+  </div>
+)}
 
           <div ref={chatEndRef} />
         </div>
@@ -444,7 +437,7 @@ export default function DeepDivePage() {
               disabled={sending || !input.trim()}
               className={`w-11 h-11 bg-gradient-to-br ${currentUserColor.dot} rounded-2xl flex items-center justify-center hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 shadow-lg`}
             >
-              <Send className="w-5 h-5 text-white" />
+                <Send className="w-5 h-5 text-white" />
             </button>
           </div>
           <p className="text-slate-600 text-[10px] text-center mt-3">
@@ -463,6 +456,41 @@ export default function DeepDivePage() {
           </div>
         </div>
       )}
+
+    </div>
+  )
+}
+
+function ThinkingIndicator({ questionNumber }) {
+  const messages = [
+    'Reading your response...',
+    'Analyzing your answer...',
+    'Connecting the dots...',
+    'Forming next question...',
+    'Checking your profile...',
+    'Cross-referencing...',
+    'Almost there...'
+  ]
+  
+  const [messageIndex, setMessageIndex] = useState(0)
+  
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMessageIndex(prev => (prev + 1) % messages.length)
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [])
+  
+  return (
+    <div>
+      <div className="flex gap-1.5 mb-2">
+        <span className="w-2 h-2 rounded-full animate-bounce bg-emerald-500/60" style={{ animationDelay: '0ms' }} />
+        <span className="w-2 h-2 rounded-full animate-bounce bg-emerald-500/60" style={{ animationDelay: '150ms' }} />
+        <span className="w-2 h-2 rounded-full animate-bounce bg-emerald-500/60" style={{ animationDelay: '300ms' }} />
+      </div>
+      <p className="text-xs text-slate-500 animate-pulse">
+        {messages[messageIndex]}
+      </p>
     </div>
   )
 }
